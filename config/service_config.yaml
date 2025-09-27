@@ -1,0 +1,141 @@
+# Controller service settings
+controller:
+  host: "127.0.0.1"
+  port: 8000
+  workers: 1
+  timeout: 60
+  max_concurrent_requests: 10
+  
+  # CORS settings
+  cors:
+    allow_origins: ["http://localhost:3000", "http://127.0.0.1:3000"]
+    allow_methods: ["GET", "POST", "PUT", "DELETE"]
+    allow_headers: ["*"]
+  
+  # Request/Response settings
+  request:
+    max_body_size: 10485760  # 10MB
+    timeout: 30
+  
+  response:
+    include_raw_data: true  # Include raw Letta responses for debugging
+    include_memory_ops: true  # Include memory operation summaries
+
+# Letta service configuration  
+letta:
+  url: "http://127.0.0.1:8283"
+  api_key: null  # Optional - set via LETTA_API_KEY env var
+  timeout: 30
+  max_retries: 3
+  retry_delay: 1.0
+  
+  # Connection settings
+  connection:
+    pool_size: 10
+    pool_maxsize: 20
+    pool_block: false
+    
+  # Agent settings
+  agent:
+    default_model: "groq/llama-3.1-70b-versatile"
+    default_embedding: "openai/text-embedding-3-small"
+    
+  # Health check settings
+  health_check:
+    enabled: true
+    interval: 30  # seconds
+    timeout: 5
+    max_failures: 3
+
+# Qdrant Cloud configuration
+qdrant:
+  url: null  # Set via QDRANT_URL env var
+  api_key: null  # Set via QDRANT_API_KEY env var
+  collection_name: "memgpt_archive"
+  timeout: 30
+  max_retries: 3
+  retry_delay: 1.0
+  
+  # Collection settings
+  collection:
+    vector_size: 1536  # OpenAI text-embedding-3-small dimensions
+    distance: "Cosine"  # Cosine, Dot, Euclid
+    
+    # Auto-creation settings
+    auto_create: true
+    recreate_if_exists: false
+    
+    # Performance settings
+    hnsw_config:
+      m: 16
+      ef_construct: 100
+      full_scan_threshold: 10000
+      
+  # Search settings
+  search:
+    default_limit: 6
+    max_limit: 50
+    score_threshold: 0.7
+    exact: false
+    
+  # Health check settings  
+  health_check:
+    enabled: true
+    interval: 60  # seconds
+    timeout: 10
+    max_failures: 3
+
+# Embedding service configuration
+embeddings:
+  # Provider switching
+  provider: "openai"  # openai, sentence_transformers
+  fallback_provider: "sentence_transformers"
+  
+  # OpenAI settings
+  openai:
+    api_key: null  # Set via OPENAI_API_KEY env var
+    model: "text-embedding-3-small"
+    dimensions: 1536
+    batch_size: 100
+    timeout: 30
+    max_retries: 3
+    retry_delay: 1.0
+    
+  # Sentence Transformers settings  
+  sentence_transformers:
+    model: "all-MiniLM-L6-v2"
+    device: "cpu"
+    batch_size: 32
+    normalize_embeddings: true
+    cache_folder: "./models"
+
+# Heartbeat loop configuration
+heartbeat:
+  max_steps: 6
+  step_timeout: 30
+  total_timeout: 180
+  
+  # Tool execution settings
+  tools:
+    execution_timeout: 15
+    max_parallel_tools: 3
+    retry_on_failure: true
+    max_retries: 2
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  directory: "logs"
+  
+  # File settings
+  files:
+    controller: "memgpt_controller.log"
+    memory_ops: "memory_operations.log"
+    service_health: "service_health.log"
+    errors: "errors.log"
+    
+  # Console output
+  console:
+    enabled: true
+    level: "INFO"
+    colored: true  # Use colors in console output

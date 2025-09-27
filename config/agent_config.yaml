@@ -1,0 +1,148 @@
+# Agent identity and behavior settings
+agent:
+  name: "MemGPT-Agent"
+  description: "Stateful ReAct agent with persistent memory"
+  version: "1.0.0"
+  
+  # Model configuration - can be overridden via environment
+  llm:
+    primary_provider: "groq"  # groq, openai
+    fallback_provider: "openai"
+    
+    # Groq configuration
+    groq:
+      model: "llama-3.3-70b-versatile"
+      temperature: 0.1
+      max_tokens: 1000
+      timeout: 30
+      
+    # OpenAI configuration  
+    openai:
+      model: "gpt-4-turbo-preview"
+      temperature: 0.1
+      max_tokens: 1000
+      timeout: 30
+
+  # Embedding configuration
+  embeddings:
+    provider: "openai"  # openai, sentence_transformers
+    
+    openai:
+      model: "text-embedding-3-small"
+      dimensions: 1536
+      batch_size: 100
+      
+    sentence_transformers:
+      model: "all-MiniLM-L6-v2"
+      device: "cpu"  # cpu, cuda (use cpu for no GPU)
+      batch_size: 32
+
+# Core memory blocks configuration
+core_memory:
+  blocks:
+    human:
+      label: "Human"
+      description: "Information about the user (preferences, habits, personal details)"
+      initial_value: "The user's information will be stored here as we learn about them."
+      max_tokens: 1500
+      priority: 1
+      
+    persona:
+      label: "Persona" 
+      description: "Agent's personality and behavior guidelines"
+      initial_value: "I am a helpful AI assistant with persistent memory. I can remember our conversations and learn from them to provide better assistance over time."
+      max_tokens: 1500
+      priority: 1
+      
+    context:
+      label: "Context"
+      description: "Current conversation context and ongoing tasks"
+      initial_value: "Current conversation context and active tasks will be tracked here."
+      max_tokens: 1500
+      priority: 2
+      
+    preferences:
+      label: "Preferences"
+      description: "User preferences and settings"
+      initial_value: "User preferences and configuration settings will be stored here."
+      max_tokens: 1000
+      priority: 2
+      
+    knowledge:
+      label: "Knowledge"
+      description: "Domain-specific knowledge relevant to conversations"
+      initial_value: "Important domain knowledge and facts will be accumulated here."
+      max_tokens: 2000
+      priority: 3
+      
+    goals:
+      label: "Goals"
+      description: "Current objectives and long-term goals"
+      initial_value: "Current objectives and long-term goals will be tracked here."
+      max_tokens: 1000
+      priority: 3
+
+  # Token management
+  token_limits:
+    core_block_limit: 1500  # Per block before eviction
+    summary_limit: 220      # Summary length after eviction
+    total_core_limit: 8000  # Total across all blocks
+    
+  # Eviction settings
+  eviction:
+    strategy: "summarize_and_archive"  # summarize_and_archive, oldest_first, priority_based
+    preserve_recent: 200  # Always keep last N tokens
+    summary_prompt: |
+      Summarize the following memory block content in {max_tokens} tokens or less.
+      Focus on the most important facts, preferences, and context.
+      Preserve specific details that might be referenced later.
+      
+      Content to summarize:
+      {content}
+
+# Agent behavior settings
+behavior:
+  # Response generation
+  max_response_tokens: 500
+  thinking_tokens: 100  # Tokens reserved for internal reasoning
+  
+  # Tool usage
+  max_tool_calls_per_turn: 5
+  tool_call_timeout: 30
+  
+  # Memory management
+  auto_summarize: true
+  proactive_archival: true  # Agent can preemptively archive content
+  
+  # Personality traits
+  personality:
+    helpfulness: 0.9      # How eager to help (0.0-1.0)
+    curiosity: 0.7        # How much to ask follow-up questions
+    formality: 0.3        # Communication style (0=casual, 1=formal)
+    creativity: 0.6       # Creative vs factual responses
+    
+# System instructions
+system_instructions: |
+  You are a stateful AI assistant with persistent memory capabilities. You can:
+  
+  1. REMEMBER: Edit your core memory blocks to store important information
+  2. RECALL: Search your archival memory for past conversations and facts  
+  3. LEARN: Continuously update your understanding of the user and context
+  
+  Core Memory Blocks:
+  - Human: Information about the user
+  - Persona: Your personality and guidelines
+  - Context: Current conversation state
+  - Preferences: User settings and preferences
+  - Knowledge: Important domain knowledge
+  - Goals: Current and long-term objectives
+  
+  Memory Tools Available:
+  - core_memory_append: Add information to a memory block
+  - core_memory_replace: Replace content in a memory block  
+  - archival_memory_search: Search past conversations and archived content
+  - archival_memory_insert: Store important information for future reference
+  - memory_summarize: Summarize content before archiving
+  
+  Always be helpful, remember context across conversations, and learn from interactions.
+  Use your memory tools proactively to provide better assistance over time.
