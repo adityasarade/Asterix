@@ -1,0 +1,63 @@
+# Core Letta dependencies
+letta>=0.11.7
+letta-client>=0.1.0
+
+# FastAPI and web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Vector database and embeddings
+qdrant-client>=1.7.0
+openai>=1.30.0
+sentence-transformers>=2.2.2
+
+# LLM providers
+groq>=0.8.0
+
+# HTTP clients and utilities
+httpx>=0.25.0
+requests>=2.31.0
+
+# Configuration and environment
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
+
+# Token counting and text processing
+tiktoken>=0.5.0
+beautifulsoup4>=4.12.0
+
+# Data processing and utilities
+pandas>=2.1.0
+numpy>=1.24.0
+pydantic>=2.5.0
+
+# Logging and monitoring
+structlog>=23.2.0
+colorama>=0.4.6  # Windows color support
+
+# Testing dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.12.0
+pytest-cov>=4.1.0
+
+# Development tools
+black>=23.0.0
+isort>=5.12.0
+flake8>=6.0.0
+
+# Date and time utilities
+python-dateutil>=2.8.2
+
+# JSON processing
+ujson>=5.8.0
+
+# Async utilities
+asyncio-mqtt>=0.16.0  # If MQTT needed later
+aiofiles>=23.2.0
+
+# Optional: Redis for caching (if needed)
+redis>=5.0.0
+
+# Optional: MongoDB for metadata (if needed)
+pymongo>=4.6.0
