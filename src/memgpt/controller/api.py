@@ -157,7 +157,7 @@ class HeartbeatController:
     def __init__(self, agent_id: str, user_id: str, max_steps: int = None):
         self.agent_id = agent_id
         self.user_id = user_id
-        self.max_steps = max_steps or memory_config.heartbeat_max_steps
+        self.max_steps = max_steps or controller_config.heartbeat_max_steps
         self.current_step = 0
         self.memory_tracker = MemoryOperationTracker()
         self.start_time = time.time()
@@ -707,7 +707,7 @@ async def create_agent(
         
         # Get default configurations
         default_model = request.model or config.get_yaml_config(
-            "service_config.yaml", "letta.agent.default_model", "groq/llama-3.1-70b-versatile"
+            "service_config.yaml", "letta.agent.default_model", "groq/llama-3.3-70b-versatile"
         )
         default_embedding = request.embedding or config.get_yaml_config(
             "service_config.yaml", "letta.agent.default_embedding", "openai/text-embedding-3-small"
