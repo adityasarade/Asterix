@@ -244,13 +244,29 @@ class LettaClientWrapper:
                     "value": block.get("initial_value", block.get("value", ""))
                 })
             
-            # Create the agent using correct API
+            # **NEW: Define memory tool names - Letta expects tool NAMES not IDs**
+            logger.info("Preparing memory tools for agent...")
+            memory_tool_names = [
+                "core_memory_append",
+                "core_memory_replace", 
+                "archival_memory_search",
+                "archival_memory_insert",
+                "conversation_search",
+                "send_message"  # Required for agent responses
+            ]
+
+            logger.info(f"Attaching {len(memory_tool_names)} memory tools to agent")
+            for tool_name in memory_tool_names:
+                logger.info(f"  - {tool_name}")
+
+            # Create the agent using correct API with tool NAMES (not IDs)
             agent_state = self._client.agents.create(
                 name=agent_config.name,
                 model=agent_config.model,
                 embedding=agent_config.embedding,
                 memory_blocks=memory_blocks,
-                system=agent_config.system_instructions
+                system=agent_config.system_instructions,
+                tools=memory_tool_names  # **CRITICAL: Pass tool NAMES as strings**
             )
             
             agent_id = agent_state.id
@@ -260,6 +276,7 @@ class LettaClientWrapper:
             self._agents_cache[agent_config.name] = agent_id
             
             logger.info(f"Created Letta agent '{agent_config.name}' with ID: {agent_id}")
+            logger.info(f"  Attached {len(memory_tool_names)} tools to agent")
             return agent_id
             
         except ApiError as e:
@@ -304,48 +321,43 @@ class LettaClientWrapper:
             return None
     
     async def send_message(self, agent_id: str, message: str, 
-                          role: str = "user") -> Dict[str, Any]:
+                        role: str = "user") -> Dict[str, Any]:
         """
-        Send a message to a Letta agent using the correct API.
+        Send a message to a Letta agent using the modern API format.
+        """
+        logger.info(f"🔧 DEBUG: send_message called with message: '{message[:50]}...'")  # Add this line
         
-        Args:
-            agent_id: ID of the agent to message
-            message: Message content to send
-            role: Role of the message sender
-            
-        Returns:
-            Agent response with messages and metadata
-            
-        Raises:
-            LettaConnectionError: If unable to connect to Letta
-            LettaAgentError: If message sending fails
-        """
         if not await self.ensure_connected():
             raise LettaConnectionError("Unable to connect to Letta service")
         
         try:
-            # Create message using correct format
+            logger.info("🔧 DEBUG: About to import MessageCreate")  # Add this line
+            from letta_client import MessageCreate
+            
+            logger.info("🔧 DEBUG: Creating MessageCreate object")  # Add this line
+            # Create message using the modern format
             message_obj = MessageCreate(
                 role=role,
                 content=message
             )
             
-            # Send message using correct API method
+            logger.info(f"🔧 DEBUG: About to call Letta API for agent {agent_id}")  # Add this line
+            # Send message to agent using the correct API
             response = self._client.agents.messages.create(
                 agent_id=agent_id,
                 messages=[message_obj]
             )
             
-            # Parse response
+            logger.info(f"🔧 DEBUG: Letta API call successful, response type: {type(response)}")
+            
+            # Parse LettaResponse
             result = {
                 "agent_id": agent_id,
                 "messages": [],
-                "tool_calls": [],
-                "memory_blocks": {},
                 "usage": {}
             }
             
-            # Extract messages from response
+            # Extract messages from LettaResponse
             if hasattr(response, 'messages') and response.messages:
                 for msg in response.messages:
                     message_data = {
@@ -357,14 +369,13 @@ class LettaClientWrapper:
                     
                     # Handle tool calls if present
                     if hasattr(msg, 'tool_calls') and msg.tool_calls:
-                        message_data["tool_calls"] = msg.tool_calls
-                    
-                    # Handle tool call messages
-                    if hasattr(msg, 'tool_call') and msg.tool_call:
-                        message_data["tool_call"] = {
-                            "name": getattr(msg.tool_call, 'name', ''),
-                            "arguments": getattr(msg.tool_call, 'arguments', {})
-                        }
+                        message_data["tool_calls"] = []
+                        for tool_call in msg.tool_calls:
+                            tool_data = {
+                                "name": getattr(tool_call, 'name', ''),
+                                "arguments": getattr(tool_call, 'arguments', {})
+                            }
+                            message_data["tool_calls"].append(tool_data)
                     
                     result["messages"].append(message_data)
             
@@ -379,12 +390,9 @@ class LettaClientWrapper:
             logger.info(f"Sent message to agent {agent_id}, got {len(result['messages'])} messages")
             return result
             
-        except ApiError as e:
+        except Exception as e:
             logger.error(f"Letta API error sending message: {e}")
             raise LettaAgentError(f"Failed to send message: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error sending message: {e}")
-            raise LettaAgentError(f"Unexpected error: {e}")
     
     async def get_agent_memory(self, agent_id: str) -> Dict[str, str]:
         """

@@ -152,7 +152,15 @@ class MemoryOperationTracker:
 
 
 class HeartbeatController:
-    """Manages the heartbeat loop and tool execution"""
+    """
+    Modern Heartbeat Controller that works without request_heartbeat.
+    
+    The new approach:
+    1. Send message to agent
+    2. Check response for tool calls or reasoning that indicates "thinking"
+    3. If agent is still thinking, continue the loop
+    4. If agent provides assistant_message, return to user
+    """
     
     def __init__(self, agent_id: str, user_id: str, max_steps: int = None):
         self.agent_id = agent_id
@@ -161,16 +169,18 @@ class HeartbeatController:
         self.current_step = 0
         self.memory_tracker = MemoryOperationTracker()
         self.start_time = time.time()
+        self.conversation_history = []  # Track full conversation
     
     async def execute_heartbeat_loop(self, initial_message: str) -> Dict[str, Any]:
         """
-        Execute the main heartbeat loop with tool handling.
+        Execute the modern heartbeat loop without request_heartbeat.
         
-        Args:
-            initial_message: Initial user message
-            
-        Returns:
-            Final response with metadata
+        The new flow:
+        1. Service health check
+        2. Memory management
+        3. Send message and analyze response
+        4. Continue loop if agent is still "thinking"
+        5. Return when agent provides final response
         """
         try:
             # Step 1: Service Health Check
@@ -182,8 +192,8 @@ class HeartbeatController:
             # Step 3: Check for memory eviction needs
             await self._check_memory_eviction(memory_blocks)
             
-            # Step 4: Send initial message and start heartbeat loop
-            final_response = await self._run_heartbeat_loop(initial_message, memory_blocks)
+            # Step 4: Execute the modern heartbeat loop
+            final_response = await self._run_modern_heartbeat_loop(initial_message)
             
             # Step 5: Post-processing memory management
             await self._post_process_memory()
@@ -206,6 +216,185 @@ class HeartbeatController:
                 error=str(e)
             )
             raise
+    
+    async def _run_modern_heartbeat_loop(self, initial_message: str) -> str:
+        """
+        Modern heartbeat loop that works with memgpt_v2_agent architecture.
+        
+        Key insight: Instead of relying on request_heartbeat, we analyze
+        the agent's response to determine if it needs more thinking time.
+        """
+        current_message = initial_message
+        assistant_response = None
+        
+        while self.current_step < self.max_steps:
+            self.current_step += 1
+            
+            try:
+                logger.info(f"Heartbeat step {self.current_step}: Processing message")
+                
+                # Send message to agent
+                response = await letta_client.send_message(
+                    self.agent_id,
+                    current_message,
+                    role="user" if self.current_step == 1 else "system"
+                )
+                
+                # Analyze the response to determine next action
+                action = self._analyze_response(response)
+                
+                if action["type"] == "assistant_response":
+                    # Agent provided a final response
+                    assistant_response = action["content"]
+                    logger.info(f"Agent provided final response after {self.current_step} steps")
+                    break
+                    
+                elif action["type"] == "tool_execution_needed":
+                    # Agent wants to execute tools
+                    tool_results = await self._execute_tools(action["tools"])
+                    
+                    # Prepare continuation message based on tool results
+                    current_message = self._format_tool_continuation(tool_results)
+                    
+                elif action["type"] == "thinking_continues":
+                    # Agent is still thinking, continue with a continuation prompt
+                    current_message = "Continue your analysis and provide your response."
+                    
+                else:
+                    # Unknown response type, try to extract any available response
+                    assistant_response = action.get("content", "I need more time to process your request.")
+                    break
+                
+            except Exception as e:
+                logger.error(f"Heartbeat step {self.current_step} failed: {e}")
+                if self.current_step == 1:
+                    # If first step fails, raise the error
+                    raise
+                else:
+                    # Return partial response for later steps
+                    assistant_response = "I encountered an issue processing your request. Please try again."
+                    break
+        
+        # Handle max steps reached
+        if assistant_response is None:
+            logger.warning(f"Reached max heartbeat steps ({self.max_steps}) for agent {self.agent_id}")
+            assistant_response = "I need more time to process your request. Please try asking in a different way."
+        
+        return assistant_response
+    
+    def _analyze_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Analyze agent response to determine what action to take next.
+        
+        Modern Letta agents respond with:
+        - reasoning_message: Internal thinking (continue loop)
+        - assistant_message: Final response to user (end loop)
+        - tool_call_message: Tool execution needed (execute and continue)
+        """
+        messages = response.get("messages", [])
+        
+        assistant_content = None
+        tool_calls = []
+        has_reasoning = False
+        
+        for message in messages:
+            msg_type = message.get("message_type", "")
+            
+            if msg_type == "assistant_message":
+                assistant_content = message.get("content", "")
+                
+            elif msg_type == "reasoning_message":
+                has_reasoning = True
+                
+            elif msg_type == "tool_call_message":
+                if message.get("tool_call"):
+                    tool_calls.append(message["tool_call"])
+        
+        # Decision logic for modern Letta
+        if assistant_content and not tool_calls:
+            # Agent provided final response
+            return {
+                "type": "assistant_response",
+                "content": assistant_content
+            }
+            
+        elif tool_calls:
+            # Agent wants to execute tools
+            return {
+                "type": "tool_execution_needed",
+                "tools": tool_calls
+            }
+            
+        elif has_reasoning and not assistant_content:
+            # Agent is still thinking
+            return {
+                "type": "thinking_continues",
+                "content": "Agent is processing..."
+            }
+        
+        else:
+            # Fallback: try to extract any available content
+            fallback_content = ""
+            for message in messages:
+                if message.get("content"):
+                    fallback_content = message["content"]
+                    break
+            
+            return {
+                "type": "assistant_response",
+                "content": fallback_content or "I'm still processing your request."
+            }
+    
+    async def _execute_tools(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Execute tools that the agent requested.
+        
+        Since the modern agent doesn't use request_heartbeat,
+        we execute tools and format the results for continuation.
+        """
+        tool_results = []
+        
+        for tool_call in tool_calls:
+            tool_name = tool_call.get("name", "")
+            tool_args = tool_call.get("arguments", {})
+            
+            # Parse arguments if they're a string
+            if isinstance(tool_args, str):
+                try:
+                    import json
+                    tool_args = json.loads(tool_args)
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse tool arguments: {tool_args}")
+                    continue
+            
+            # Execute the tool
+            result = await self._execute_single_tool(tool_name, tool_args)
+            tool_results.append({
+                "tool": tool_name,
+                "args": tool_args,
+                "result": result
+            })
+        
+        return tool_results
+    
+    def _format_tool_continuation(self, tool_results: List[Dict[str, Any]]) -> str:
+        """
+        Format tool execution results for agent continuation.
+        
+        This replaces the old request_heartbeat=true mechanism.
+        """
+        if not tool_results:
+            return "Continue processing."
+        
+        continuation_parts = ["Tool execution completed:"]
+        
+        for result in tool_results:
+            tool_name = result["tool"]
+            tool_result = result["result"]
+            continuation_parts.append(f"- {tool_name}: {tool_result}")
+        
+        continuation_parts.append("Please continue your analysis based on these results.")
+        return "\n".join(continuation_parts)
     
     async def _verify_service_health(self):
         """Verify all required services are healthy"""
@@ -273,6 +462,10 @@ class HeartbeatController:
                 "blocks_needing_eviction": blocks_over_limit
             }
         )
+        
+        # For now, just log - implement eviction logic later if needed
+        if blocks_over_limit:
+            logger.info(f"Memory blocks over limit detected: {blocks_over_limit}")
     
     async def _evict_memory_block(self, block_name: str, content: str):
         """Evict a memory block using summarize + archive strategy"""
@@ -639,6 +832,62 @@ async def chat_with_agent(
     """
     start_time = time.time()
     
+    # Validate request parameters before processing
+    if not request.agent_id or not request.agent_id.strip():
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Invalid agent ID",
+                "message": "Agent ID cannot be empty or null",
+                "agent_id": request.agent_id
+            }
+        )
+    
+    if not request.user_id or not request.user_id.strip():
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Invalid user ID", 
+                "message": "User ID cannot be empty or null",
+                "user_id": request.user_id
+            }
+        )
+    
+    if not request.text or not request.text.strip():
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Invalid message",
+                "message": "Message text cannot be empty or null",
+                "text": request.text
+            }
+        )
+    
+    # ADD AGENT EXISTENCE CHECK
+    try:
+        # Verify agent exists before processing
+        agents = await letta_client.list_agents()
+        agent_exists = any(agent["id"] == request.agent_id for agent in agents)
+        
+        if not agent_exists:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "Agent not found",
+                    "message": f"Agent with ID '{request.agent_id}' does not exist",
+                    "agent_id": request.agent_id,
+                    "available_agents": [agent["id"] for agent in agents[:5]]  # Show first 5
+                }
+            )
+    except LettaConnectionError:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Letta service unavailable",
+                "message": "Cannot verify agent existence - Letta service is not available"
+            }
+        )
+    
     try:
         # Initialize heartbeat controller
         heartbeat_controller = HeartbeatController(
@@ -755,7 +1004,6 @@ async def list_agents():
     except Exception as e:
         logger.error(f"Failed to list agents: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list agents: {e}")
-
 
 if __name__ == "__main__":
     import uvicorn

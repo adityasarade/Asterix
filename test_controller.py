@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Test configuration
 BASE_URL = "http://127.0.0.1:8000"
 TEST_USER_ID = "test_user_123"
-TEST_AGENT_NAME = "test_agent_controller"
+TEST_AGENT_NAME = "modern_memgpt_agent"
 
 
 async def test_controller_health():
@@ -76,8 +76,10 @@ async def test_agent_management():
                 agents_data = response.json()
                 print(f"✅ Agent listing: SUCCESS - {agents_data['count']} agents found")
                 existing_agents = agents_data['agents']
+                print(f"   Found agents: {[agent.get('name', 'unnamed') for agent in existing_agents]}")
             else:
                 print(f"❌ Agent listing: FAILED - {response.status_code}")
+                print(f"   Error response: {response.text}")
                 return False, None
             
             # Check if test agent already exists
