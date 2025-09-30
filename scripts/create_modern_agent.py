@@ -3,6 +3,10 @@
 Create a new agent with modern system instructions
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import asyncio
 import httpx
 

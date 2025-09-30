@@ -4,3 +4,4 @@ Claude.md
 __pycache__/
 .env
 .claude/
+openapi_letta.json

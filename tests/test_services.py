@@ -8,6 +8,10 @@ Tests all service wrappers to ensure they're working correctly:
 - LLM provider manager
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import asyncio
 import logging
 from src.memgpt.services import (

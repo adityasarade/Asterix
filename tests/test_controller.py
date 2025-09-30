@@ -10,6 +10,10 @@ Tests the FastAPI controller and heartbeat loop:
 - Error handling and recovery
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import asyncio
 import httpx
 import json
