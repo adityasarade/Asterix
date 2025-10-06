@@ -37,7 +37,7 @@ letta:
     
   # Agent settings
   agent:
-    default_model: "groq/llama-3.3-70b-versatile"
+    default_model: "openai/gpt-4-turbo-preview"
     default_embedding: "openai/text-embedding-3-small"
     
   # Health check settings
