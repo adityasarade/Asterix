@@ -5,3 +5,4 @@ __pycache__/
 .env
 .claude/
 openapi_letta.json
+logs/
