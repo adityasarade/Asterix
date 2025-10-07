@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asterix-agent"
+version = "0.1.0"
+description = "Stateful AI agents with editable memory blocks and persistent storage"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Aditya Sarade", email = "aditya.sarade2003@gmail.com"}
+]
+requires-python = ">=3.10"
+keywords = ["ai", "agents", "memory", "llm", "qdrant", "stateful"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "openai>=1.30.0",
+    "groq>=0.8.0",
+    "qdrant-client>=1.7.0",
+    "sentence-transformers>=2.2.2",
+    "tiktoken>=0.5.0",
+    "pyyaml>=6.0.1",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.5.0",
+    "httpx>=0.25.0",
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/adityasarade/Asterix"
+Documentation = "https://github.com/adityasarade/Asterix#readme"
+Repository = "https://github.com/adityasarade/Asterix"
+Issues = "https://github.com/adityasarade/Asterix/issues"
+
+[tool.setuptools.packages.find]
+include = ["asterix*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"

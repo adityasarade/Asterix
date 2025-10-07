@@ -1,8 +1,7 @@
-venv/
-Description.md
-Claude.md
+.venv/
+uv.lock
 __pycache__/
 .env
-.claude/
-openapi_letta.json
 logs/
+docs/
+asterix_agent.egg-info/
