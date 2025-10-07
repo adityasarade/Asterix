@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional, Union
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 import logging
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -354,3 +355,364 @@ def create_default_blocks() -> Dict[str, BlockConfig]:
 
 # Load environment on module import
 load_environment()
+
+# ============================================================================
+# YAML Configuration Manager
+# ============================================================================
+
+class ConfigurationManager:
+    """
+    Manages configuration loading from YAML files and environment variables.
+    
+    Priority order:
+    1. Python overrides (highest)
+    2. Environment variables
+    3. YAML configuration files
+    4. Default values (lowest)
+    
+    Example:
+        >>> manager = ConfigurationManager("config")
+        >>> config = manager.load_agent_config("my_agent.yaml")
+        >>> # Or with overrides:
+        >>> config = manager.load_agent_config(
+        ...     "my_agent.yaml",
+        ...     model="openai/gpt-4",
+        ...     temperature=0.2
+        ... )
+    """
+    
+    def __init__(self, config_dir: Optional[Union[str, Path]] = None):
+        """
+        Initialize configuration manager.
+        
+        Args:
+            config_dir: Directory containing YAML config files (default: "./config")
+        """
+        self.config_dir = Path(config_dir) if config_dir else Path("./config")
+        self._config_cache: Dict[str, Dict[str, Any]] = {}
+        
+        # Ensure environment is loaded
+        load_environment()
+    
+    def load_yaml_file(self, filename: str) -> Dict[str, Any]:
+        """
+        Load a YAML configuration file.
+        
+        Args:
+            filename: Name of the YAML file (e.g., "agent_config.yaml")
+            
+        Returns:
+            Dictionary with configuration data
+        """
+        # Check cache first
+        if filename in self._config_cache:
+            return self._config_cache[filename]
+        
+        config_path = self.config_dir / filename
+        
+        if not config_path.exists():
+            logger.warning(f"Configuration file not found: {config_path}")
+            return {}
+        
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = yaml.safe_load(f) or {}
+            
+            # Replace environment variable references (${VAR_NAME})
+            config_data = self._resolve_env_vars(config_data)
+            
+            # Cache the config
+            self._config_cache[filename] = config_data
+            
+            logger.info(f"Loaded configuration from {config_path}")
+            return config_data
+            
+        except Exception as e:
+            logger.error(f"Failed to load {config_path}: {e}")
+            return {}
+    
+    def _resolve_env_vars(self, config: Any) -> Any:
+        """
+        Recursively resolve environment variable references in config.
+        
+        Replaces ${VAR_NAME} with the value of the environment variable.
+        
+        Args:
+            config: Configuration value (dict, list, string, etc.)
+            
+        Returns:
+            Configuration with resolved environment variables
+        """
+        if isinstance(config, dict):
+            return {k: self._resolve_env_vars(v) for k, v in config.items()}
+        elif isinstance(config, list):
+            return [self._resolve_env_vars(item) for item in config]
+        elif isinstance(config, str):
+            # Replace ${VAR_NAME} patterns
+            if config.startswith("${") and config.endswith("}"):
+                var_name = config[2:-1]
+                return os.getenv(var_name, config)  # Return original if not found
+            return config
+        else:
+            return config
+    
+    def load_agent_config(self, 
+                         filename: Optional[str] = None,
+                         **overrides) -> AgentConfig:
+        """
+        Load agent configuration from YAML file with optional overrides.
+        
+        Args:
+            filename: YAML file to load (optional, can create from overrides only)
+            **overrides: Override specific configuration values
+            
+        Returns:
+            AgentConfig object
+            
+        Example:
+            >>> # Load from YAML
+            >>> config = manager.load_agent_config("my_agent.yaml")
+            
+            >>> # Load with overrides
+            >>> config = manager.load_agent_config(
+            ...     "my_agent.yaml",
+            ...     model="openai/gpt-4",
+            ...     temperature=0.2
+            ... )
+            
+            >>> # Create from scratch with overrides only
+            >>> config = manager.load_agent_config(
+            ...     agent_id="new_agent",
+            ...     model="groq/llama-3.3-70b-versatile",
+            ...     blocks={"task": BlockConfig(size=1500)}
+            ... )
+        """
+        # Load YAML config if provided
+        if filename:
+            yaml_config = self.load_yaml_file(filename)
+        else:
+            yaml_config = {}
+        
+        # Build configuration with priority: overrides > env vars > yaml > defaults
+        
+        # 1. Start with YAML or defaults
+        agent_id = yaml_config.get("agent_id", "agent")
+        model = yaml_config.get("model", "groq/llama-3.3-70b-versatile")
+        temperature = yaml_config.get("temperature", 0.1)
+        max_tokens = yaml_config.get("max_tokens", 1000)
+        max_heartbeat_steps = yaml_config.get("max_heartbeat_steps", 10)
+        
+        # 2. Apply environment variable overrides
+        agent_id = get_env("AGENT_ID", agent_id)
+        model = get_env("AGENT_MODEL", model)
+        temperature = float(get_env("AGENT_TEMPERATURE", temperature))
+        max_tokens = int(get_env("AGENT_MAX_TOKENS", max_tokens))
+        max_heartbeat_steps = int(get_env("AGENT_MAX_HEARTBEAT_STEPS", max_heartbeat_steps))
+        
+        # 3. Apply Python overrides
+        agent_id = overrides.pop("agent_id", agent_id)
+        model = overrides.pop("model", model)
+        temperature = overrides.pop("temperature", temperature)
+        max_tokens = overrides.pop("max_tokens", max_tokens)
+        max_heartbeat_steps = overrides.pop("max_heartbeat_steps", max_heartbeat_steps)
+        
+        # Load blocks configuration
+        blocks = self._load_blocks_config(yaml_config, overrides)
+        
+        # Load storage configuration
+        storage = self._load_storage_config(yaml_config, overrides)
+        
+        # Load memory configuration
+        memory = self._load_memory_config(yaml_config, overrides)
+        
+        # Load embedding configuration
+        embedding = self._load_embedding_config(yaml_config, overrides)
+        
+        # Create AgentConfig
+        return AgentConfig(
+            agent_id=agent_id,
+            blocks=blocks,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            max_heartbeat_steps=max_heartbeat_steps,
+            storage=storage,
+            memory=memory,
+            embedding=embedding
+        )
+    
+    def _load_blocks_config(self, 
+                           yaml_config: Dict[str, Any],
+                           overrides: Dict[str, Any]) -> Dict[str, BlockConfig]:
+        """Load blocks configuration from YAML and overrides."""
+        # Check for override first
+        if "blocks" in overrides:
+            return overrides.pop("blocks")
+        
+        # Load from YAML
+        blocks_config = yaml_config.get("blocks", {})
+        
+        if not blocks_config:
+            # Return default blocks if none specified
+            return create_default_blocks()
+        
+        # Convert YAML blocks to BlockConfig objects
+        blocks = {}
+        for block_name, block_data in blocks_config.items():
+            blocks[block_name] = BlockConfig(
+                size=block_data.get("size", 1500),
+                priority=block_data.get("priority", 1),
+                description=block_data.get("description", ""),
+                initial_value=block_data.get("initial_value", "")
+            )
+        
+        return blocks
+    
+    def _load_storage_config(self,
+                            yaml_config: Dict[str, Any],
+                            overrides: Dict[str, Any]) -> StorageConfig:
+        """Load storage configuration from YAML and overrides."""
+        # Check for override first
+        if "storage" in overrides:
+            return overrides.pop("storage")
+        
+        # Load from YAML
+        storage_config = yaml_config.get("storage", {})
+        
+        # Build StorageConfig with env var fallbacks
+        return StorageConfig(
+            qdrant_url=storage_config.get("qdrant_url") or get_env("QDRANT_URL", ""),
+            qdrant_api_key=storage_config.get("qdrant_api_key") or get_env("QDRANT_API_KEY", ""),
+            qdrant_collection_name=storage_config.get("qdrant_collection_name") or 
+                                   get_env("QDRANT_COLLECTION_NAME", "asterix_memory"),
+            vector_size=int(storage_config.get("vector_size", 1536)),
+            qdrant_timeout=int(storage_config.get("qdrant_timeout", 30)),
+            auto_create_collection=storage_config.get("auto_create_collection", True),
+            state_backend=storage_config.get("state_backend", "json"),
+            state_dir=storage_config.get("state_dir", "./agent_states"),
+            state_db=storage_config.get("state_db", "agents.db")
+        )
+    
+    def _load_memory_config(self,
+                           yaml_config: Dict[str, Any],
+                           overrides: Dict[str, Any]) -> MemoryConfig:
+        """Load memory configuration from YAML and overrides."""
+        # Check for override first
+        if "memory" in overrides:
+            return overrides.pop("memory")
+        
+        # Load from YAML
+        memory_config = yaml_config.get("memory", {})
+        
+        return MemoryConfig(
+            eviction_strategy=memory_config.get("eviction_strategy", "summarize_and_archive"),
+            summary_token_limit=int(memory_config.get("summary_token_limit", 220)),
+            context_window_threshold=float(memory_config.get("context_window_threshold", 0.85)),
+            extraction_enabled=memory_config.get("extraction_enabled", True),
+            retrieval_k=int(memory_config.get("retrieval_k", 6)),
+            score_threshold=float(memory_config.get("score_threshold", 0.7))
+        )
+    
+    def _load_embedding_config(self,
+                              yaml_config: Dict[str, Any],
+                              overrides: Dict[str, Any]) -> EmbeddingConfig:
+        """Load embedding configuration from YAML and overrides."""
+        # Check for override first
+        if "embedding" in overrides:
+            return overrides.pop("embedding")
+        
+        # Load from YAML
+        embedding_config = yaml_config.get("embedding", {})
+        
+        return EmbeddingConfig(
+            provider=embedding_config.get("provider") or get_env("EMBED_PROVIDER", "openai"),
+            model=embedding_config.get("model", "text-embedding-3-small"),
+            dimensions=int(embedding_config.get("dimensions", 1536)),
+            batch_size=int(embedding_config.get("batch_size", 100)),
+            api_key=embedding_config.get("api_key") or get_env("OPENAI_API_KEY")
+        )
+    
+    def save_agent_config(self, config: AgentConfig, filename: str):
+        """
+        Save agent configuration to YAML file.
+        
+        Args:
+            config: AgentConfig to save
+            filename: Output filename
+        """
+        output_path = self.config_dir / filename
+        
+        # Create config directory if it doesn't exist
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Convert config to dictionary
+        config_dict = {
+            "agent_id": config.agent_id,
+            "model": config.model,
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
+            "max_heartbeat_steps": config.max_heartbeat_steps,
+            "blocks": {
+                name: {
+                    "size": block.size,
+                    "priority": block.priority,
+                    "description": block.description,
+                    "initial_value": block.initial_value
+                }
+                for name, block in config.blocks.items()
+            },
+            "storage": {
+                "qdrant_url": "${QDRANT_URL}",  # Use env var reference
+                "qdrant_api_key": "${QDRANT_API_KEY}",
+                "qdrant_collection_name": config.storage.qdrant_collection_name,
+                "vector_size": config.storage.vector_size,
+                "state_backend": config.storage.state_backend,
+                "state_dir": config.storage.state_dir
+            },
+            "memory": {
+                "eviction_strategy": config.memory.eviction_strategy,
+                "summary_token_limit": config.memory.summary_token_limit,
+                "context_window_threshold": config.memory.context_window_threshold,
+                "retrieval_k": config.memory.retrieval_k,
+                "score_threshold": config.memory.score_threshold
+            },
+            "embedding": {
+                "provider": config.embedding.provider,
+                "model": config.embedding.model,
+                "dimensions": config.embedding.dimensions,
+                "batch_size": config.embedding.batch_size
+            }
+        }
+        
+        # Write to YAML file
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False)
+            
+            logger.info(f"Saved configuration to {output_path}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save configuration to {output_path}: {e}")
+            raise
+
+
+# Global configuration manager instance
+_config_manager: Optional[ConfigurationManager] = None
+
+
+def get_config_manager(config_dir: Optional[Union[str, Path]] = None) -> ConfigurationManager:
+    """
+    Get or create the global configuration manager instance.
+    
+    Args:
+        config_dir: Directory containing config files (optional)
+        
+    Returns:
+        ConfigurationManager instance
+    """
+    global _config_manager
+    
+    if _config_manager is None:
+        _config_manager = ConfigurationManager(config_dir)
+    
+    return _config_manager
