@@ -1,4 +1,4 @@
-# Asterix
+# Asterix!
 
 **Stateful AI agents with editable memory blocks and persistent storage.**
 
@@ -405,5 +405,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-```
 **So that everyone can build better agents without worrying about memory (Hope OpenAI does not make this library meaningless)**
