@@ -1,6 +1,5 @@
 venv/
-Description.md
-Claude.md
+docs/
 __pycache__/
 .env
 .claude/
