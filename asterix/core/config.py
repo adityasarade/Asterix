@@ -1,12 +1,11 @@
 """
-MemGPT Configuration Loader
+Asterix Configuration System
 
-Loads and manages configuration from YAML files and environment variables.
-Provides a unified interface for accessing all configuration settings.
+Provides configuration classes and management for the Asterix library.
+Supports both YAML configuration files and direct Python configuration.
 """
 
 import os
-import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
 from dataclasses import dataclass, field
@@ -16,444 +15,342 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# Core Configuration Dataclasses
+# ============================================================================
+
 @dataclass
-class ServiceStatus:
-    """Service health status information"""
-    name: str
-    available: bool
-    error: Optional[str] = None
-    last_check: Optional[str] = None
-    response_time: Optional[float] = None
+class BlockConfig:
+    """
+    Configuration for a memory block.
+    
+    Memory blocks are editable storage areas that the agent can read and write.
+    Each block has a token limit and priority for eviction.
+    
+    Args:
+        size: Maximum tokens before eviction is triggered
+        priority: Eviction priority (lower = evicted first, higher = kept longer)
+        description: Human-readable description of the block's purpose
+        initial_value: Initial content for the block (optional)
+    
+    Example:
+        >>> code_block = BlockConfig(
+        ...     size=2000,
+        ...     priority=1,
+        ...     description="Code being reviewed or edited"
+        ... )
+    """
+    size: int
+    priority: int = 1
+    description: str = ""
+    initial_value: str = ""
+    
+    def __post_init__(self):
+        """Validate configuration values."""
+        if self.size <= 0:
+            raise ValueError("Block size must be positive")
+        if self.priority < 0:
+            raise ValueError("Priority must be non-negative")
+
+
+@dataclass
+class MemoryConfig:
+    """
+    Configuration for memory management behavior.
+    
+    Controls how the agent manages its memory blocks, including eviction,
+    summarization, and archival strategies.
+    
+    Args:
+        eviction_strategy: Strategy for handling full blocks ("summarize_and_archive", "truncate")
+        summary_token_limit: Maximum tokens for block summaries
+        context_window_threshold: Trigger memory extraction at this % of context window
+        extraction_enabled: Whether to automatically extract memories
+        retrieval_k: Default number of memories to retrieve from archival
+        score_threshold: Minimum similarity score for archival retrieval
+    """
+    eviction_strategy: str = "summarize_and_archive"
+    summary_token_limit: int = 220
+    context_window_threshold: float = 0.85
+    extraction_enabled: bool = True
+    retrieval_k: int = 6
+    score_threshold: float = 0.7
+    
+    def __post_init__(self):
+        """Validate configuration values."""
+        if self.eviction_strategy not in ["summarize_and_archive", "truncate"]:
+            raise ValueError(f"Invalid eviction strategy: {self.eviction_strategy}")
+        if not 0.0 < self.context_window_threshold <= 1.0:
+            raise ValueError("Context window threshold must be between 0 and 1")
+        if self.summary_token_limit <= 0:
+            raise ValueError("Summary token limit must be positive")
+
+
+@dataclass
+class StorageConfig:
+    """
+    Configuration for storage backends (Qdrant and state persistence).
+    
+    Args:
+        qdrant_url: Qdrant Cloud URL
+        qdrant_api_key: Qdrant API key
+        qdrant_collection_name: Collection name for this agent's memories
+        vector_size: Embedding dimension (1536 for OpenAI, 384 for sentence-transformers)
+        qdrant_timeout: Timeout for Qdrant operations (seconds)
+        auto_create_collection: Whether to auto-create collection if missing
+        
+        state_backend: State persistence backend ("json", "sqlite", or custom)
+        state_dir: Directory for state files (for json backend)
+        state_db: Database path (for sqlite backend)
+    """
+    # Qdrant configuration
+    qdrant_url: str = ""
+    qdrant_api_key: str = ""
+    qdrant_collection_name: str = "asterix_memory"
+    vector_size: int = 1536
+    qdrant_timeout: int = 30
+    auto_create_collection: bool = True
+    
+    # State persistence configuration
+    state_backend: str = "json"
+    state_dir: str = "./agent_states"
+    state_db: str = "agents.db"
+    
+    def __post_init__(self):
+        """Validate configuration values."""
+        if self.state_backend not in ["json", "sqlite"]:
+            # Allow custom backends without validation
+            if not hasattr(self.state_backend, 'save'):
+                logger.warning(f"Custom state backend should implement 'save' and 'load' methods")
 
 
 @dataclass
 class LLMConfig:
-    """LLM provider configuration"""
+    """
+    Configuration for LLM provider.
+    
+    Args:
+        provider: LLM provider name ("groq", "openai")
+        model: Model identifier
+        temperature: Sampling temperature (0.0-1.0)
+        max_tokens: Maximum tokens for completion
+        timeout: Request timeout (seconds)
+        api_key: API key for the provider (optional, can use env var)
+    """
     provider: str
     model: str
     temperature: float = 0.1
     max_tokens: int = 1000
     timeout: int = 30
     api_key: Optional[str] = None
+    
+    def __post_init__(self):
+        """Validate configuration values."""
+        if self.provider not in ["groq", "openai"]:
+            raise ValueError(f"Unsupported LLM provider: {self.provider}")
+        if not 0.0 <= self.temperature <= 2.0:
+            raise ValueError("Temperature must be between 0.0 and 2.0")
+        if self.max_tokens <= 0:
+            raise ValueError("Max tokens must be positive")
 
 
 @dataclass
 class EmbeddingConfig:
-    """Embedding provider configuration"""
-    provider: str
-    model: str
+    """
+    Configuration for embedding provider.
+    
+    Args:
+        provider: Embedding provider ("openai", "sentence_transformers")
+        model: Model identifier
+        dimensions: Embedding dimensions
+        batch_size: Batch size for processing
+        api_key: API key (optional, can use env var)
+    """
+    provider: str = "openai"
+    model: str = "text-embedding-3-small"
     dimensions: int = 1536
     batch_size: int = 100
     api_key: Optional[str] = None
+    
+    def __post_init__(self):
+        """Validate configuration values."""
+        if self.provider not in ["openai", "sentence_transformers"]:
+            raise ValueError(f"Unsupported embedding provider: {self.provider}")
+        if self.dimensions <= 0:
+            raise ValueError("Dimensions must be positive")
 
 
 @dataclass
-class QdrantConfig:
-    """Qdrant configuration"""
-    url: str
-    api_key: str
-    collection_name: str = "memgpt_archive"
-    vector_size: int = 1536
-    timeout: int = 30
-    auto_create: bool = True
-
-
-@dataclass
-class MemoryConfig:
-    """Memory management configuration"""
-    core_block_token_limit: int = 1500
-    summary_token_limit: int = 220
-    retrieval_k: int = 6
-    eviction_strategy: str = "summarize_and_archive"
-    token_counter: str = "tiktoken"
-
-
-@dataclass
-class ControllerConfig:
-    """Controller service configuration"""
-    host: str = "127.0.0.1"
-    port: int = 8000
-    timeout: int = 60
-    max_concurrent_requests: int = 10
-    heartbeat_max_steps: int = 6
-
-
-class ConfigurationManager:
+class AgentConfig:
     """
-    Manages configuration loading from YAML files and environment variables.
+    Main configuration for an Asterix.
     
-    Priority order:
-    1. Environment variables (highest)
-    2. YAML configuration files
-    3. Default values (lowest)
+    This is the primary configuration class that bundles all settings for an agent.
+    
+    Args:
+        agent_id: Unique identifier for this agent
+        blocks: Dictionary mapping block names to BlockConfig objects
+        
+        model: LLM model string (format: "provider/model-name")
+        temperature: LLM temperature
+        max_tokens: Maximum tokens for LLM responses
+        max_heartbeat_steps: Maximum tool execution loop iterations
+        
+        llm: Full LLM configuration (optional, overrides model/temperature/max_tokens)
+        embedding: Embedding configuration (optional, uses defaults if not provided)
+        memory: Memory management configuration (optional, uses defaults)
+        storage: Storage configuration (optional, must provide Qdrant details)
+        
+    Example:
+        >>> config = AgentConfig(
+        ...     agent_id="my_agent",
+        ...     blocks={
+        ...         "task": BlockConfig(size=1500, priority=1),
+        ...         "notes": BlockConfig(size=1000, priority=2)
+        ...     },
+        ...     model="groq/llama-3.3-70b-versatile",
+        ...     storage=StorageConfig(
+        ...         qdrant_url="https://...",
+        ...         qdrant_api_key="..."
+        ...     )
+        ... )
     """
+    # Agent identity
+    agent_id: str
+    blocks: Dict[str, BlockConfig] = field(default_factory=dict)
     
-    def __init__(self, config_dir: Optional[str] = None):
+    # LLM settings (simple)
+    model: str = "groq/llama-3.3-70b-versatile"
+    temperature: float = 0.1
+    max_tokens: int = 1000
+    max_heartbeat_steps: int = 10
+    
+    # Full configurations (optional, for advanced use)
+    llm: Optional[LLMConfig] = None
+    embedding: Optional[EmbeddingConfig] = None
+    memory: Optional[MemoryConfig] = None
+    storage: Optional[StorageConfig] = None
+    
+    def __post_init__(self):
+        """Set up derived configurations."""
+        # Parse model string to create LLMConfig if not provided
+        if self.llm is None:
+            provider, model_name = self._parse_model_string(self.model)
+            self.llm = LLMConfig(
+                provider=provider,
+                model=model_name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens
+            )
+        
+        # Set defaults for other configs if not provided
+        if self.embedding is None:
+            self.embedding = EmbeddingConfig()
+        
+        if self.memory is None:
+            self.memory = MemoryConfig()
+        
+        if self.storage is None:
+            self.storage = StorageConfig()
+        
+        # Validate agent_id
+        if not self.agent_id or not self.agent_id.strip():
+            raise ValueError("agent_id cannot be empty")
+    
+    def _parse_model_string(self, model: str) -> tuple[str, str]:
         """
-        Initialize configuration manager.
+        Parse model string in format 'provider/model-name'.
         
         Args:
-            config_dir: Directory containing YAML config files
+            model: Model string (e.g., "groq/llama-3.3-70b-versatile")
+            
+        Returns:
+            Tuple of (provider, model_name)
         """
-        self.config_dir = Path(config_dir) if config_dir else Path("config")
-        self._config_cache: Dict[str, Any] = {}
-        self._load_environment()
-        self._load_yaml_configs()
-    
-    def _load_environment(self):
-        """Load environment variables from .env file"""
-        env_file = Path(".env")
-        if env_file.exists():
-            load_dotenv(env_file)
-            logger.info(f"Loaded environment variables from {env_file}")
+        if "/" in model:
+            provider, model_name = model.split("/", 1)
+            return provider.strip(), model_name.strip()
         else:
-            logger.warning(".env file not found, using system environment variables")
+            # Assume groq if no provider specified
+            return "groq", model.strip()
+
+
+# ============================================================================
+# Environment Variable Loading
+# ============================================================================
+
+def load_environment():
+    """Load environment variables from .env file if it exists."""
+    env_file = Path(".env")
+    if env_file.exists():
+        load_dotenv(env_file)
+        logger.info(f"Loaded environment variables from {env_file}")
+    else:
+        logger.debug(".env file not found, using system environment variables")
+
+
+def get_env(key: str, default: Any = None, required: bool = False) -> Any:
+    """
+    Get environment variable with optional type conversion.
     
-    def _load_yaml_configs(self):
-        """Load YAML configuration files"""
-        config_files = [
-            "agent_config.yaml",
-            "service_config.yaml", 
-            "memory_config.yaml"
-        ]
+    Args:
+        key: Environment variable name
+        default: Default value if not found
+        required: Whether the variable is required
         
-        for config_file in config_files:
-            config_path = self.config_dir / config_file
-            if config_path.exists():
-                try:
-                    with open(config_path, 'r', encoding='utf-8') as f:
-                        config_data = yaml.safe_load(f)
-                        self._config_cache[config_file] = config_data
-                        logger.info(f"Loaded configuration from {config_path}")
-                except Exception as e:
-                    logger.error(f"Failed to load {config_path}: {e}")
-                    self._config_cache[config_file] = {}
-            else:
-                logger.warning(f"Configuration file not found: {config_path}")
-                self._config_cache[config_file] = {}
+    Returns:
+        Environment variable value or default
+        
+    Raises:
+        ValueError: If required variable is not found
+    """
+    value = os.getenv(key, default)
     
-    def get_env(self, key: str, default: Any = None, required: bool = False) -> Any:
-        """
-        Get environment variable with optional type conversion.
-        
-        Args:
-            key: Environment variable name
-            default: Default value if not found
-            required: Whether the variable is required
-            
-        Returns:
-            Environment variable value or default
-            
-        Raises:
-            ValueError: If required variable is not found
-        """
-        value = os.getenv(key, default)
-        
-        if required and value is None:
-            raise ValueError(f"Required environment variable {key} not found")
-        
-        # Type conversion for boolean strings
-        if isinstance(value, str):
-            if value.lower() in ('true', '1', 'yes', 'on'):
-                return True
-            elif value.lower() in ('false', '0', 'no', 'off'):
-                return False
-        
-        return value
+    if required and value is None:
+        raise ValueError(f"Required environment variable {key} not found")
     
-    def get_yaml_config(self, file: str, path: str, default: Any = None) -> Any:
-        """
-        Get configuration value from YAML file using dot notation.
-        
-        Args:
-            file: YAML filename (e.g., "agent_config.yaml")
-            path: Dot-separated path (e.g., "agent.llm.groq.model")
-            default: Default value if not found
-            
-        Returns:
-            Configuration value or default
-        """
-        config = self._config_cache.get(file, {})
-        
-        # Navigate through nested dictionaries
-        current = config
-        for key in path.split('.'):
-            if isinstance(current, dict) and key in current:
-                current = current[key]
-            else:
-                return default
-        
-        return current
+    # Type conversion for boolean strings
+    if isinstance(value, str):
+        if value.lower() in ('true', '1', 'yes', 'on'):
+            return True
+        elif value.lower() in ('false', '0', 'no', 'off'):
+            return False
     
-    def get_llm_config(self, provider: Optional[str] = None) -> LLMConfig:
-        """
-        Get LLM configuration for specified provider.
-        
-        Args:
-            provider: LLM provider name (groq, openai) or None for primary
-            
-        Returns:
-            LLM configuration object
-        """
-        # Determine provider
-        if not provider:
-            provider = self.get_env("LLM_PROVIDER") or \
-                      self.get_yaml_config("agent_config.yaml", "agent.llm.primary_provider", "groq")
-        
-        # Get provider-specific config
-        if provider == "groq":
-            model = self.get_env("GROQ_MODEL") or \
-                   self.get_yaml_config("agent_config.yaml", "agent.llm.groq.model", "llama-3.3-70b-versatile")
-            
-            return LLMConfig(
-                provider=provider,
-                model=model,
-                temperature=float(self.get_env("GROQ_TEMPERATURE") or 
-                                self.get_yaml_config("agent_config.yaml", "agent.llm.groq.temperature", 0.1)),
-                max_tokens=int(self.get_env("GROQ_MAX_TOKENS") or 
-                             self.get_yaml_config("agent_config.yaml", "agent.llm.groq.max_tokens", 1000)),
-                timeout=int(self.get_env("GROQ_TIMEOUT") or 
-                          self.get_yaml_config("agent_config.yaml", "agent.llm.groq.timeout", 30)),
-                api_key=self.get_env("GROQ_API_KEY", required=True)
-            )
-        
-        elif provider == "openai":
-            model = self.get_env("OPENAI_MODEL") or \
-                   self.get_yaml_config("agent_config.yaml", "agent.llm.openai.model", "gpt-4-turbo-preview")
-            
-            return LLMConfig(
-                provider=provider,
-                model=model,
-                temperature=float(self.get_env("OPENAI_TEMPERATURE") or 
-                                self.get_yaml_config("agent_config.yaml", "agent.llm.openai.temperature", 0.1)),
-                max_tokens=int(self.get_env("OPENAI_MAX_TOKENS") or 
-                             self.get_yaml_config("agent_config.yaml", "agent.llm.openai.max_tokens", 1000)),
-                timeout=int(self.get_env("OPENAI_TIMEOUT") or 
-                          self.get_yaml_config("agent_config.yaml", "agent.llm.openai.timeout", 30)),
-                api_key=self.get_env("OPENAI_API_KEY", required=True)
-            )
-        
-        else:
-            raise ValueError(f"Unsupported LLM provider: {provider}")
+    return value
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def create_default_blocks() -> Dict[str, BlockConfig]:
+    """
+    Create a set of default memory blocks for general use.
     
-    def get_embedding_config(self) -> EmbeddingConfig:
-        """
-        Get embedding configuration.
-        
-        Returns:
-            Embedding configuration object
-        """
-        provider = self.get_env("EMBED_PROVIDER") or \
-                  self.get_yaml_config("agent_config.yaml", "agent.embeddings.provider", "openai")
-        
-        if provider == "openai":
-            return EmbeddingConfig(
-                provider=provider,
-                model=self.get_env("OPENAI_EMBEDDING_MODEL") or 
-                     self.get_yaml_config("agent_config.yaml", "agent.embeddings.openai.model", "text-embedding-3-small"),
-                dimensions=int(self.get_env("OPENAI_EMBEDDING_DIMENSIONS") or 
-                             self.get_yaml_config("agent_config.yaml", "agent.embeddings.openai.dimensions", 1536)),
-                batch_size=int(self.get_env("OPENAI_EMBEDDING_BATCH_SIZE") or 
-                             self.get_yaml_config("agent_config.yaml", "agent.embeddings.openai.batch_size", 100)),
-                api_key=self.get_env("OPENAI_API_KEY", required=True)
-            )
-        
-        elif provider == "sentence_transformers":
-            return EmbeddingConfig(
-                provider=provider,
-                model=self.get_env("SBERT_MODEL") or 
-                     self.get_yaml_config("agent_config.yaml", "agent.embeddings.sentence_transformers.model", "all-MiniLM-L6-v2"),
-                batch_size=int(self.get_env("SBERT_BATCH_SIZE") or 
-                             self.get_yaml_config("agent_config.yaml", "agent.embeddings.sentence_transformers.batch_size", 32))
-            )
-        
-        else:
-            raise ValueError(f"Unsupported embedding provider: {provider}")
-    
-    def get_qdrant_config(self) -> QdrantConfig:
-        """
-        Get Qdrant configuration.
-        
-        Returns:
-            Qdrant configuration object
-        """
-        return QdrantConfig(
-            url=self.get_env("QDRANT_URL", required=True),
-            api_key=self.get_env("QDRANT_API_KEY", required=True),
-            collection_name=self.get_env("QDRANT_COLLECTION_NAME") or 
-                          self.get_yaml_config("service_config.yaml", "qdrant.collection_name", "memgpt_archive"),
-            vector_size=int(self.get_env("QDRANT_VECTOR_SIZE") or 
-                          self.get_yaml_config("service_config.yaml", "qdrant.collection.vector_size", 1536)),
-            timeout=int(self.get_env("QDRANT_TIMEOUT") or 
-                      self.get_yaml_config("service_config.yaml", "qdrant.timeout", 30)),
-            auto_create=self.get_env("QDRANT_AUTO_CREATE", True)
+    Returns:
+        Dictionary of default blocks
+    """
+    return {
+        "persona": BlockConfig(
+            size=1000,
+            priority=10,  # High priority - rarely evicted
+            description="Agent's personality and behavior guidelines",
+            initial_value="I am a helpful AI assistant with persistent memory."
+        ),
+        "user": BlockConfig(
+            size=1000,
+            priority=5,  # Medium-high priority
+            description="Information about the user",
+            initial_value="User information will be stored here."
+        ),
+        "task": BlockConfig(
+            size=1500,
+            priority=2,  # Lower priority - can be evicted
+            description="Current task and context",
+            initial_value=""
         )
-    
-    def get_memory_config(self) -> MemoryConfig:
-        """
-        Get memory management configuration.
-        
-        Returns:
-            Memory configuration object
-        """
-        return MemoryConfig(
-            core_block_token_limit=int(self.get_env("CORE_BLOCK_TOKEN_LIMIT") or 
-                                     self.get_yaml_config("memory_config.yaml", "tokens.core_memory.block_limit", 1500)),
-            summary_token_limit=int(self.get_env("SUMMARY_TOKEN_LIMIT") or 
-                                  self.get_yaml_config("memory_config.yaml", "tokens.core_memory.summary_limit", 220)),
-            retrieval_k=int(self.get_env("RETRIEVAL_K") or 
-                          self.get_yaml_config("memory_config.yaml", "retrieval.semantic.default_k", 6)),
-            eviction_strategy=self.get_env("EVICTION_STRATEGY") or 
-                            self.get_yaml_config("memory_config.yaml", "eviction.strategy", "summarize_and_archive"),
-            token_counter=self.get_env("TOKEN_COUNTER") or 
-                        self.get_yaml_config("memory_config.yaml", "tokens.counter", "tiktoken")
-        )
-    
-    def get_controller_config(self) -> ControllerConfig:
-        """
-        Get controller configuration.
-        
-        Returns:
-            Controller configuration object
-        """
-        return ControllerConfig(
-            host=self.get_env("CONTROLLER_HOST") or 
-                self.get_yaml_config("service_config.yaml", "controller.host", "127.0.0.1"),
-            port=int(self.get_env("CONTROLLER_PORT") or 
-                   self.get_yaml_config("service_config.yaml", "controller.port", 8000)),
-            timeout=int(self.get_env("CONTROLLER_TIMEOUT") or 
-                      self.get_yaml_config("service_config.yaml", "controller.timeout", 60)),
-            max_concurrent_requests=int(self.get_env("MAX_CONCURRENT_REQUESTS") or 
-                                      self.get_yaml_config("service_config.yaml", "controller.max_concurrent_requests", 10)),
-            heartbeat_max_steps=int(self.get_env("HEARTBEAT_MAX_STEPS") or 
-                                  self.get_yaml_config("service_config.yaml", "heartbeat.max_steps", 6))
-        )
-    
-    def get_letta_config(self) -> Dict[str, Any]:
-        """
-        Get Letta service configuration.
-        
-        Returns:
-            Dictionary with Letta configuration
-        """
-        return {
-            "url": self.get_env("LETTA_URL") or 
-                  self.get_yaml_config("service_config.yaml", "letta.url", "http://127.0.0.1:8283"),
-            "api_key": self.get_env("LETTA_API_KEY"),
-            "timeout": int(self.get_env("LETTA_TIMEOUT") or 
-                         self.get_yaml_config("service_config.yaml", "letta.timeout", 30)),
-            "max_retries": int(self.get_env("LETTA_MAX_RETRIES") or 
-                             self.get_yaml_config("service_config.yaml", "letta.max_retries", 3)),
-            "retry_delay": float(self.get_env("LETTA_RETRY_DELAY") or 
-                               self.get_yaml_config("service_config.yaml", "letta.retry_delay", 1.0))
-        }
-    
-    def get_logging_config(self) -> Dict[str, Any]:
-        """
-        Get logging configuration.
-        
-        Returns:
-            Dictionary with logging configuration
-        """
-        return {
-            "level": self.get_env("LOG_LEVEL") or 
-                    self.get_yaml_config("service_config.yaml", "logging.level", "INFO"),
-            "directory": self.get_env("LOG_DIR") or 
-                        self.get_yaml_config("service_config.yaml", "logging.directory", "logs"),
-            "files": self.get_yaml_config("service_config.yaml", "logging.files", {
-                "controller": "memgpt_controller.log",
-                "memory_ops": "memory_operations.log", 
-                "service_health": "service_health.log",
-                "errors": "errors.log"
-            }),
-            "format": self.get_yaml_config("service_config.yaml", "logging.format", {}),
-            "rotation": self.get_yaml_config("service_config.yaml", "logging.rotation", {}),
-            "console": self.get_yaml_config("service_config.yaml", "logging.console", {
-                "enabled": True,
-                "level": "INFO",
-                "colored": True
-            })
-        }
-    
-    def validate_configuration(self) -> Dict[str, bool]:
-        """
-        Validate all configuration settings.
-        
-        Returns:
-            Dictionary mapping config sections to validation status
-        """
-        validation_results = {}
-        
-        try:
-            # Validate LLM configuration
-            llm_config = self.get_llm_config()
-            validation_results["llm"] = bool(llm_config.api_key)
-        except Exception as e:
-            logger.error(f"LLM configuration validation failed: {e}")
-            validation_results["llm"] = False
-        
-        try:
-            # Validate embedding configuration
-            embed_config = self.get_embedding_config()
-            validation_results["embeddings"] = bool(embed_config.provider)
-        except Exception as e:
-            logger.error(f"Embedding configuration validation failed: {e}")
-            validation_results["embeddings"] = False
-        
-        try:
-            # Validate Qdrant configuration
-            qdrant_config = self.get_qdrant_config()
-            validation_results["qdrant"] = bool(qdrant_config.url and qdrant_config.api_key)
-        except Exception as e:
-            logger.error(f"Qdrant configuration validation failed: {e}")
-            validation_results["qdrant"] = False
-        
-        try:
-            # Validate Letta configuration
-            letta_config = self.get_letta_config()
-            validation_results["letta"] = bool(letta_config["url"])
-        except Exception as e:
-            logger.error(f"Letta configuration validation failed: {e}")
-            validation_results["letta"] = False
-        
-        return validation_results
-    
-    def get_core_memory_blocks(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Get core memory blocks configuration.
-        
-        Returns:
-            Dictionary mapping block names to their configuration
-        """
-        return self.get_yaml_config("agent_config.yaml", "core_memory.blocks", {
-            "human": {
-                "label": "Human",
-                "description": "Information about the user",
-                "initial_value": "The user's information will be stored here.",
-                "max_tokens": 1500,
-                "priority": 1
-            },
-            "persona": {
-                "label": "Persona", 
-                "description": "Agent's personality and behavior",
-                "initial_value": "I am a helpful AI assistant with persistent memory.",
-                "max_tokens": 1500,
-                "priority": 1
-            }
-        })
-    
-    def reload_configuration(self):
-        """Reload all configuration from files and environment"""
-        self._config_cache.clear()
-        self._load_environment()
-        self._load_yaml_configs()
-        logger.info("Configuration reloaded")
+    }
 
 
-# Global configuration manager instance
-config_manager = ConfigurationManager()
-
-
-def get_config() -> ConfigurationManager:
-    """Get the global configuration manager instance"""
-    return config_manager
+# Load environment on module import
+load_environment()
