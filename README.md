@@ -1,4 +1,4 @@
-# Asterix!
+# Asterix
 
 **Stateful AI agents with editable memory blocks and persistent storage.**
 
