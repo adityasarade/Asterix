@@ -29,6 +29,11 @@ from .archival import (
     create_archival_memory_tools
 )
 
+from .conversation import (
+    ConversationSearchTool,
+    create_conversation_search_tool
+)
+
 __all__ = [
     # Base classes
     "Tool",
@@ -49,4 +54,8 @@ __all__ = [
     "ArchivalMemoryInsertTool",
     "ArchivalMemorySearchTool",
     "create_archival_memory_tools",
+    
+    # Conversation search
+    "ConversationSearchTool",
+    "create_conversation_search_tool",
 ]
