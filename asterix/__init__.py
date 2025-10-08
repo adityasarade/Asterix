@@ -1,26 +1,39 @@
 """
-MemGPT - Stateful ReAct Agent with Persistent Memory
+Asterix - Stateful AI agents with editable memory blocks
 
-A MemGPT/Letta-style agent system with:
-- Editable core memory blocks
-- Archival memory in Qdrant Cloud
-- Service health monitoring
-- Configurable LLM providers (Groq/OpenAI)
+A lightweight Python library for building AI agents that can remember,
+learn, and persist their state across sessions.
 """
 
-__version__ = "1.0.0"
-__author__ = "MemGPT Project"
+__version__ = "0.1.0"
+__author__ = "Aditya Sarade"
 
-from .utils.config import get_config, ConfigurationManager
-from .utils.health import health_monitor, check_service_health, ensure_required_services
-from .utils.tokens import count_tokens, analyze_memory_tokens
+from .agent import Agent, MemoryBlock
+from .core.config import (
+    AgentConfig,
+    BlockConfig,
+    MemoryConfig,
+    StorageConfig,
+    LLMConfig,
+    EmbeddingConfig,
+    ConfigurationManager,
+    get_config_manager,
+    create_default_blocks
+)
 
 __all__ = [
-    "get_config",
-    "ConfigurationManager", 
-    "health_monitor",
-    "check_service_health",
-    "ensure_required_services",
-    "count_tokens",
-    "analyze_memory_tokens"
+    # Main classes
+    "Agent",
+    "MemoryBlock",
+    
+    # Configuration
+    "AgentConfig",
+    "BlockConfig",
+    "MemoryConfig",
+    "StorageConfig",
+    "LLMConfig",
+    "EmbeddingConfig",
+    "ConfigurationManager",
+    "get_config_manager",
+    "create_default_blocks",
 ]

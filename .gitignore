@@ -5,3 +5,4 @@ __pycache__/
 logs/
 docs/
 asterix_agent.egg-info/
+dist/
