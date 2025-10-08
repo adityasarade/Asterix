@@ -21,6 +21,15 @@ from .core.config import (
     create_default_blocks
 )
 
+from .tools import (
+    ToolRegistry,
+    Tool,
+    ToolResult,
+    create_core_memory_tools,
+    create_archival_memory_tools,
+    create_conversation_search_tool
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -198,7 +207,13 @@ class Agent:
         # Conversation history
         self.conversation_history: List[Dict[str, Any]] = []
         
-        # Tool registry (will be populated in later steps)
+        # Initialize tool registry
+        self._tool_registry = ToolRegistry()
+        
+        # Auto-register built-in memory tools
+        self._register_memory_tools()
+        
+        # Legacy tool tracking (will be replaced by registry in later steps)
         self._tools: Dict[str, Callable] = {}
         self._tool_schemas: Dict[str, Dict[str, Any]] = {}
         
@@ -322,6 +337,63 @@ class Agent:
         }
     
     # ========================================================================
+    # Tool Management
+    # ========================================================================
+    
+    def _register_memory_tools(self):
+        """
+        Register the 5 built-in memory tools.
+        
+        Called automatically during Agent initialization. These tools allow
+        the agent to:
+        - Edit its own memory blocks (core_memory_append, core_memory_replace)
+        - Store/retrieve long-term memories (archival_memory_insert, archival_memory_search)
+        - Search conversation history (conversation_search)
+        
+        Internal method - users don't need to call this.
+        """
+        try:
+            # Register core memory tools (append, replace)
+            core_tools = create_core_memory_tools(self)
+            for tool_name, tool in core_tools.items():
+                self._tool_registry.register(tool)
+                logger.debug(f"Registered core memory tool: {tool_name}")
+            
+            # Register archival memory tools (insert, search)
+            archival_tools = create_archival_memory_tools(self)
+            for tool_name, tool in archival_tools.items():
+                self._tool_registry.register(tool)
+                logger.debug(f"Registered archival memory tool: {tool_name}")
+            
+            # Register conversation search tool
+            conversation_tool = create_conversation_search_tool(self)
+            self._tool_registry.register(conversation_tool)
+            logger.debug(f"Registered conversation search tool: {conversation_tool.name}")
+            
+            logger.info(f"Registered {len(self._tool_registry)} built-in memory tools")
+            
+        except Exception as e:
+            logger.error(f"Failed to register memory tools: {e}")
+            raise RuntimeError(f"Memory tool registration failed: {e}")
+    
+    def get_tool_schemas(self) -> List[Dict[str, Any]]:
+        """
+        Get OpenAI function schemas for all registered tools.
+        
+        This is used by the heartbeat loop to tell the LLM what tools
+        are available for function calling.
+        
+        Returns:
+            List of tool schemas in OpenAI function calling format
+            
+        Example:
+            >>> schemas = agent.get_tool_schemas()
+            >>> # Returns schemas for all registered tools
+            >>> # Used in Step 2 for LLM completion calls
+        """
+        return self._tool_registry.get_tool_schemas()
+    
+    # ========================================================================
     # Chat Interface (Stub - will implement in Step 2)
     # ========================================================================
     
@@ -359,16 +431,20 @@ class Agent:
         return "Agent chat functionality will be implemented in Step 2 (Heartbeat Loop)"
     
     # ========================================================================
-    # Tool Registration (Stub - will implement in Step 5)
+    # Tool Registration
     # ========================================================================
     
     def tool(self, name: Optional[str] = None, description: Optional[str] = None):
         """
         Decorator for registering custom tools.
         
+        Allows users to easily add custom capabilities to the agent by
+        decorating functions. The function signature is automatically
+        converted to an OpenAI tool schema.
+        
         Args:
             name: Tool name (uses function name if not provided)
-            description: Tool description for LLM
+            description: Tool description for LLM (uses docstring if not provided)
             
         Returns:
             Decorator function
@@ -376,26 +452,159 @@ class Agent:
         Example:
             >>> @agent.tool(name="read_file", description="Read a file from disk")
             >>> def read_file(filepath: str) -> str:
-            ...     with open(filepath) as f:
+            ...     '''Read contents of a file'''
+            ...     with open(filepath, 'r') as f:
             ...         return f.read()
-            
+            >>> 
             >>> # Now agent can call read_file() during conversations
-        
+            >>> response = agent.chat("Read config.yaml and summarize it")
+            >>> # Agent will automatically call the read_file tool
+            
         Note:
-            Full implementation coming in Step 5 (Tool Registration System)
+            The function can return either a string/value (wrapped in ToolResult)
+            or a ToolResult directly for more control over status and metadata.
         """
         def decorator(func: Callable) -> Callable:
             tool_name = name or func.__name__
+            tool_description = description or func.__doc__
             
-            # TODO: Implement full tool registration in Step 5
-            logger.debug(f"Tool registration for '{tool_name}' - full implementation in Step 5")
+            # Create Tool object from function
+            tool_obj = Tool(
+                name=tool_name,
+                description=tool_description,
+                func=func
+            )
             
+            # Register with tool registry
+            try:
+                self._tool_registry.register(tool_obj)
+                logger.info(f"Registered custom tool: {tool_name}")
+            except ValueError as e:
+                # Tool name already exists
+                logger.warning(f"Tool '{tool_name}' already registered, skipping")
+            
+            # Also store in legacy _tools dict for backward compatibility
             self._tools[tool_name] = func
-            # TODO: Generate tool schema from function signature
             
+            # Return original function so it can still be called normally
             return func
         
         return decorator
+    
+    def register_tool(self, tool: Tool):
+        """
+        Register a Tool object directly with the agent.
+        
+        Use this when you have a Tool object (not just a function).
+        Most users will prefer the @agent.tool() decorator.
+        
+        Args:
+            tool: Tool instance to register
+            
+        Raises:
+            ValueError: If tool name already exists
+            
+        Example:
+            >>> from asterix.tools import Tool, ToolResult, ToolStatus
+            >>> 
+            >>> class CustomTool(Tool):
+            ...     def execute(self, arg: str) -> ToolResult:
+            ...         return ToolResult(
+            ...             status=ToolStatus.SUCCESS,
+            ...             content=f"Processed: {arg}"
+            ...         )
+            >>> 
+            >>> my_tool = CustomTool(name="custom", description="Custom tool")
+            >>> agent.register_tool(my_tool)
+        """
+        try:
+            self._tool_registry.register(tool)
+            logger.info(f"Registered tool: {tool.name}")
+        except ValueError as e:
+            logger.error(f"Failed to register tool '{tool.name}': {e}")
+            raise
+    
+    def unregister_tool(self, tool_name: str):
+        """
+        Remove a tool from the agent.
+        
+        Note: Cannot unregister built-in memory tools (core_memory_*, 
+        archival_memory_*, conversation_search) as they are essential
+        for agent functionality.
+        
+        Args:
+            tool_name: Name of tool to remove
+            
+        Example:
+            >>> agent.unregister_tool("my_custom_tool")
+        """
+        # Protect built-in memory tools
+        builtin_tools = {
+            "core_memory_append",
+            "core_memory_replace", 
+            "archival_memory_insert",
+            "archival_memory_search",
+            "conversation_search"
+        }
+        
+        if tool_name in builtin_tools:
+            logger.warning(f"Cannot unregister built-in memory tool: {tool_name}")
+            raise ValueError(f"Cannot unregister built-in memory tool: {tool_name}")
+        
+        self._tool_registry.unregister(tool_name)
+        
+        # Also remove from legacy dict
+        if tool_name in self._tools:
+            del self._tools[tool_name]
+        
+        logger.info(f"Unregistered tool: {tool_name}")
+    
+    def get_tool(self, tool_name: str) -> Optional[Tool]:
+        """
+        Get a specific tool by name.
+        
+        Args:
+            tool_name: Name of the tool
+            
+        Returns:
+            Tool instance or None if not found
+            
+        Example:
+            >>> tool = agent.get_tool("read_file")
+            >>> if tool:
+            ...     print(f"Found: {tool.description}")
+        """
+        return self._tool_registry.get(tool_name)
+    
+    def has_tool(self, tool_name: str) -> bool:
+        """
+        Check if a tool is registered.
+        
+        Args:
+            tool_name: Name of the tool
+            
+        Returns:
+            True if tool exists, False otherwise
+            
+        Example:
+            >>> if agent.has_tool("read_file"):
+            ...     response = agent.chat("Read config.yaml")
+        """
+        return self._tool_registry.has_tool(tool_name)
+    
+    def get_all_tools(self) -> List[Tool]:
+        """
+        Get all registered tools.
+        
+        Returns:
+            List of all Tool instances
+            
+        Example:
+            >>> tools = agent.get_all_tools()
+            >>> for tool in tools:
+            ...     print(f"{tool.name}: {tool.description}")
+        """
+        return self._tool_registry.get_all_tools()
     
     # ========================================================================
     # State Persistence (Stubs - will implement in Step 3)
@@ -493,7 +702,7 @@ class Agent:
             "model": self.config.model,
             "blocks": list(self.blocks.keys()),
             "conversation_turns": len(self.conversation_history),
-            "registered_tools": list(self._tools.keys()),
+            "registered_tools": [tool.name for tool in self._tool_registry.get_all_tools()],
             "created_at": self.created_at.isoformat(),
             "last_updated": self.last_updated.isoformat(),
             "config": {
