@@ -17,6 +17,12 @@ from .base import (
     generate_tool_schema
 )
 
+from .core_memory import (
+    CoreMemoryAppendTool,
+    CoreMemoryReplaceTool,
+    create_core_memory_tools
+)
+
 __all__ = [
     # Base classes
     "Tool",
@@ -27,4 +33,9 @@ __all__ = [
     # Utilities
     "tool",
     "generate_tool_schema",
+    
+    # Core memory tools
+    "CoreMemoryAppendTool",
+    "CoreMemoryReplaceTool",
+    "create_core_memory_tools",
 ]
