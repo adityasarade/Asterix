@@ -23,6 +23,12 @@ from .core_memory import (
     create_core_memory_tools
 )
 
+from .archival import (
+    ArchivalMemoryInsertTool,
+    ArchivalMemorySearchTool,
+    create_archival_memory_tools
+)
+
 __all__ = [
     # Base classes
     "Tool",
@@ -38,4 +44,9 @@ __all__ = [
     "CoreMemoryAppendTool",
     "CoreMemoryReplaceTool",
     "create_core_memory_tools",
+    
+    # Archival memory tools
+    "ArchivalMemoryInsertTool",
+    "ArchivalMemorySearchTool",
+    "create_archival_memory_tools",
 ]
