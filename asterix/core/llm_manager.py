@@ -173,7 +173,8 @@ class LLMProviderManager:
     
     async def _call_groq(self, messages: List[LLMMessage], 
                         temperature: Optional[float] = None,
-                        max_tokens: Optional[int] = None) -> LLMResponse:
+                        max_tokens: Optional[int] = None,
+                        tools: Optional[List[Dict[str, Any]]] = None) -> LLMResponse:
         """
         Call Groq API for completion.
         
@@ -198,13 +199,20 @@ class LLMProviderManager:
             ]
             
             # Make API call
-            response = self._groq_client.chat.completions.create(
-                model=self._groq_config.model,
-                messages=groq_messages,
-                temperature=temperature or self._groq_config.temperature,
-                max_tokens=max_tokens or self._groq_config.max_tokens,
-                stream=False
-            )
+            api_params = {
+                "model": self._groq_config.model,
+                "messages": groq_messages,
+                "temperature": temperature or self._groq_config.temperature,
+                "max_tokens": max_tokens or self._groq_config.max_tokens,
+                "stream": False
+            }
+            
+            # Add tools if provided
+            if tools:
+                api_params["tools"] = tools
+                api_params["tool_choice"] = "auto"
+            
+            response = self._groq_client.chat.completions.create(**api_params)
             
             # Calculate processing time
             processing_time = time.time() - start_time
@@ -249,7 +257,8 @@ class LLMProviderManager:
     
     async def _call_openai(self, messages: List[LLMMessage],
                           temperature: Optional[float] = None,
-                          max_tokens: Optional[int] = None) -> LLMResponse:
+                          max_tokens: Optional[int] = None,
+                          tools: Optional[List[Dict[str, Any]]] = None) -> LLMResponse:
         """
         Call OpenAI API for completion.
         
@@ -274,13 +283,20 @@ class LLMProviderManager:
             ]
             
             # Make API call
-            response = self._openai_client.chat.completions.create(
-                model=self._openai_config.model,
-                messages=openai_messages,
-                temperature=temperature or self._openai_config.temperature,
-                max_tokens=max_tokens or self._openai_config.max_tokens,
-                stream=False
-            )
+            api_params = {
+                "model": self._openai_config.model,
+                "messages": openai_messages,
+                "temperature": temperature or self._openai_config.temperature,
+                "max_tokens": max_tokens or self._openai_config.max_tokens,
+                "stream": False
+            }
+            
+            # Add tools if provided
+            if tools:
+                api_params["tools"] = tools
+                api_params["tool_choice"] = "auto"
+            
+            response = self._openai_client.chat.completions.create(**api_params)
             
             # Calculate processing time
             processing_time = time.time() - start_time
@@ -337,6 +353,7 @@ class LLMProviderManager:
                       provider: Optional[str] = None,
                       temperature: Optional[float] = None,
                       max_tokens: Optional[int] = None,
+                      tools: Optional[List[Dict[str, Any]]] = None,
                       retry_on_failure: bool = True) -> LLMResponse:
         """
         Generate completion using the best available provider.
@@ -370,9 +387,9 @@ class LLMProviderManager:
         try:
             # Call the appropriate provider
             if selected_provider == "groq":
-                return await self._call_groq(messages, temperature, max_tokens)
+                return await self._call_groq(messages, temperature, max_tokens, tools)
             elif selected_provider == "openai":
-                return await self._call_openai(messages, temperature, max_tokens)
+                return await self._call_openai(messages, temperature, max_tokens, tools)
             else:
                 raise LLMError(f"Unknown provider: {selected_provider}")
                 

@@ -452,17 +452,27 @@ class Agent:
                 for msg in llm_messages
             ]
             
-            # Get LLM response
+            # Get tool schemas for LLM
+            tool_schemas = self.get_tool_schemas()
+            
+            # Get LLM response (with tools)
             response = asyncio.run(
                 self._llm_manager.complete(
                     messages=formatted_messages,
                     temperature=self.config.temperature,
-                    max_tokens=self.config.max_tokens
+                    max_tokens=self.config.max_tokens,
+                    tools=tool_schemas if tool_schemas else None
                 )
             )
             
-            # Extract content
-            assistant_response = response.content
+            # Check if response has tool calls
+            if self._has_tool_calls(response):
+                # TODO: Step 2.4 - Implement tool execution loop
+                logger.warning("LLM requested tool calls, but execution not implemented yet")
+                assistant_response = "I wanted to use a tool, but tool execution is not ready yet."
+            else:
+                # Extract text content
+                assistant_response = response.content
             
             # Add to conversation history
             self.conversation_history.append({
@@ -538,6 +548,31 @@ class Agent:
             lines.append("")
         
         return "\n".join(lines)
+    
+    def _has_tool_calls(self, llm_response) -> bool:
+        """
+        Check if LLM response contains tool calls.
+        
+        Args:
+            llm_response: Response from LLM manager
+            
+        Returns:
+            True if response has tool calls, False otherwise
+        """
+        # Check if response has raw_response with tool_calls
+        if hasattr(llm_response, 'raw_response') and llm_response.raw_response:
+            raw = llm_response.raw_response
+            
+            # OpenAI/Groq format: choices[0].message.tool_calls
+            if isinstance(raw, dict):
+                choices = raw.get('choices', [])
+                if choices and len(choices) > 0:
+                    message = choices[0].get('message', {})
+                    tool_calls = message.get('tool_calls')
+                    if tool_calls:
+                        return True
+        
+        return False
     
     # ========================================================================
     # Tool Registration
