@@ -442,39 +442,72 @@ class Agent:
             # Build messages for LLM (system prompt + memory + conversation)
             llm_messages = self._build_llm_messages()
             
-            # Call LLM (no tools for now - will add in Step 2.3)
             import asyncio
+            import json
             from .core.llm_manager import LLMMessage
-            
-            # Convert to LLMMessage format
-            formatted_messages = [
-                LLMMessage(role=msg["role"], content=msg["content"])
-                for msg in llm_messages
-            ]
             
             # Get tool schemas for LLM
             tool_schemas = self.get_tool_schemas()
             
-            # Get LLM response (with tools)
-            response = asyncio.run(
-                self._llm_manager.complete(
-                    messages=formatted_messages,
-                    temperature=self.config.temperature,
-                    max_tokens=self.config.max_tokens,
-                    tools=tool_schemas if tool_schemas else None
+            # Heartbeat loop - allow multiple tool calls
+            max_steps = self.config.max_heartbeat_steps
+            assistant_response = None
+            
+            for step in range(max_steps):
+                logger.debug(f"Heartbeat step {step + 1}/{max_steps}")
+                
+                # Convert to LLMMessage format
+                formatted_messages = [
+                    LLMMessage(role=msg["role"], content=msg["content"])
+                    for msg in llm_messages
+                ]
+                
+                # Get LLM response (with tools)
+                response = asyncio.run(
+                    self._llm_manager.complete(
+                        messages=formatted_messages,
+                        temperature=self.config.temperature,
+                        max_tokens=self.config.max_tokens,
+                        tools=tool_schemas if tool_schemas else None
+                    )
                 )
-            )
+                
+                # Check if response has tool calls
+                if self._has_tool_calls(response):
+                    # Extract tool calls
+                    tool_calls = self._extract_tool_calls(response)
+                    logger.info(f"LLM requested {len(tool_calls)} tool calls")
+                    
+                    # Add assistant message with tool calls to history
+                    # (LLM needs to see its own tool call request)
+                    llm_messages.append({
+                        "role": "assistant",
+                        "content": response.content or "",
+                        "tool_calls": tool_calls  # Store for conversation context
+                    })
+                    
+                    # Execute tools
+                    tool_results = self._execute_tool_calls(tool_calls)
+                    
+                    # Add tool results to messages
+                    for tool_result in tool_results:
+                        llm_messages.append(tool_result)
+                    
+                    # Continue loop - LLM will see tool results and respond
+                    continue
+                
+                else:
+                    # LLM provided final text response
+                    assistant_response = response.content
+                    logger.info(f"LLM provided final response after {step + 1} steps")
+                    break
             
-            # Check if response has tool calls
-            if self._has_tool_calls(response):
-                # TODO: Step 2.4 - Implement tool execution loop
-                logger.warning("LLM requested tool calls, but execution not implemented yet")
-                assistant_response = "I wanted to use a tool, but tool execution is not ready yet."
-            else:
-                # Extract text content
-                assistant_response = response.content
+            # Check if we exhausted max steps without final response
+            if assistant_response is None:
+                logger.warning(f"Reached max heartbeat steps ({max_steps}) without final response")
+                assistant_response = "I need more time to process this request. Please try asking again or breaking it into smaller parts."
             
-            # Add to conversation history
+            # Add final response to conversation history
             self.conversation_history.append({
                 "role": "assistant",
                 "content": assistant_response,
@@ -573,6 +606,94 @@ class Agent:
                         return True
         
         return False
+    
+    def _extract_tool_calls(self, llm_response) -> List[Dict[str, Any]]:
+        """
+        Extract tool calls from LLM response.
+        
+        Args:
+            llm_response: Response from LLM manager
+            
+        Returns:
+            List of tool call dictionaries with 'id', 'name', and 'arguments'
+        """
+        tool_calls = []
+        
+        if hasattr(llm_response, 'raw_response') and llm_response.raw_response:
+            raw = llm_response.raw_response
+            
+            # OpenAI/Groq format: choices[0].message.tool_calls
+            if isinstance(raw, dict):
+                choices = raw.get('choices', [])
+                if choices and len(choices) > 0:
+                    message = choices[0].get('message', {})
+                    raw_tool_calls = message.get('tool_calls', [])
+                    
+                    for tool_call in raw_tool_calls:
+                        tool_calls.append({
+                            'id': tool_call.get('id', ''),
+                            'name': tool_call.get('function', {}).get('name', ''),
+                            'arguments': tool_call.get('function', {}).get('arguments', '{}')
+                        })
+        
+        return tool_calls
+    
+    def _execute_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Execute a list of tool calls and return results.
+        
+        Args:
+            tool_calls: List of tool call dictionaries
+            
+        Returns:
+            List of tool result dictionaries for LLM consumption
+        """
+        import json
+        
+        results = []
+        
+        for tool_call in tool_calls:
+            tool_id = tool_call['id']
+            tool_name = tool_call['name']
+            
+            try:
+                # Parse arguments
+                arguments = json.loads(tool_call['arguments'])
+                
+                logger.info(f"Executing tool: {tool_name} with args: {arguments}")
+                
+                # Execute tool via registry
+                tool_result = self._tool_registry.execute_tool(tool_name, **arguments)
+                
+                # Format result for LLM
+                results.append({
+                    'tool_call_id': tool_id,
+                    'role': 'tool',
+                    'name': tool_name,
+                    'content': str(tool_result)  # ToolResult.__str__ returns formatted content
+                })
+                
+                logger.info(f"Tool {tool_name} result: {str(tool_result)[:100]}")
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse tool arguments for {tool_name}: {e}")
+                results.append({
+                    'tool_call_id': tool_id,
+                    'role': 'tool',
+                    'name': tool_name,
+                    'content': f"Error: Invalid tool arguments - {str(e)}"
+                })
+            
+            except Exception as e:
+                logger.error(f"Tool execution error ({tool_name}): {e}")
+                results.append({
+                    'tool_call_id': tool_id,
+                    'role': 'tool',
+                    'name': tool_name,
+                    'content': f"Error: {str(e)}"
+                })
+        
+        return results
     
     # ========================================================================
     # Tool Registration
