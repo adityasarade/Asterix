@@ -235,6 +235,17 @@ class Agent:
         
         logger.debug(f"Initialized blocks: {list(self.blocks.keys())}")
     
+    def _ensure_llm_manager(self):
+        """
+        Initialize LLM manager if not already initialized (lazy loading).
+        
+        This is called on first use to avoid initializing services until needed.
+        """
+        if self._llm_manager is None:
+            from .core.llm_manager import llm_manager
+            self._llm_manager = llm_manager
+            logger.debug("Initialized LLM manager")
+    
     # ========================================================================
     # Memory Block Management
     # ========================================================================
@@ -414,21 +425,119 @@ class Agent:
         Example:
             >>> response = agent.chat("What's the current task?")
             >>> print(response)
-        
-        Note:
-            Full implementation coming in Step 2 (Heartbeat Loop)
         """
-        # TODO: Implement full heartbeat loop in Step 2
-        logger.warning("chat() not fully implemented yet - coming in Step 2")
+        try:
+            # Ensure LLM manager is initialized
+            self._ensure_llm_manager()
+            
+            # Add user message to conversation history
+            self.conversation_history.append({
+                "role": "user",
+                "content": message,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            logger.info(f"User message: {message[:100]}")
+            
+            # Build messages for LLM (system prompt + memory + conversation)
+            llm_messages = self._build_llm_messages()
+            
+            # Call LLM (no tools for now - will add in Step 2.3)
+            import asyncio
+            from .core.llm_manager import LLMMessage
+            
+            # Convert to LLMMessage format
+            formatted_messages = [
+                LLMMessage(role=msg["role"], content=msg["content"])
+                for msg in llm_messages
+            ]
+            
+            # Get LLM response
+            response = asyncio.run(
+                self._llm_manager.complete(
+                    messages=formatted_messages,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens
+                )
+            )
+            
+            # Extract content
+            assistant_response = response.content
+            
+            # Add to conversation history
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": assistant_response,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            # Update last_updated timestamp
+            self.last_updated = datetime.now(timezone.utc)
+            
+            logger.info(f"Assistant response: {assistant_response[:100]}")
+            
+            return assistant_response
+            
+        except Exception as e:
+            logger.error(f"Error in chat: {e}")
+            return f"I encountered an error: {str(e)}"
+    
+    def _build_llm_messages(self) -> List[Dict[str, str]]:
+        """
+        Build the message list for LLM completion.
         
-        # For now, just store message and return placeholder
-        self.conversation_history.append({
-            "role": "user",
-            "content": message,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+        Structure:
+        1. System prompt (agent persona + memory blocks)
+        2. Conversation history
+        
+        Returns:
+            List of message dictionaries for LLM
+        """
+        messages = []
+        
+        # 1. System prompt with memory blocks
+        system_content = self._build_system_prompt()
+        messages.append({
+            "role": "system",
+            "content": system_content
         })
         
-        return "Agent chat functionality will be implemented in Step 2 (Heartbeat Loop)"
+        # 2. Add conversation history
+        messages.extend(self.conversation_history)
+        
+        return messages
+    
+    def _build_system_prompt(self) -> str:
+        """
+        Build the system prompt including memory blocks.
+        
+        Format:
+        - Agent instructions
+        - Memory blocks (formatted)
+        - Tool usage guidelines
+        
+        Returns:
+            System prompt string
+        """
+        lines = [
+            "You are a helpful AI assistant with persistent memory.",
+            "",
+            "# Memory Blocks",
+            "You have access to the following memory blocks that you can read and modify:",
+            ""
+        ]
+        
+        # Add each memory block
+        for block_name, block in self.blocks.items():
+            lines.append(f"## {block_name}")
+            if block.config.description:
+                lines.append(f"*{block.config.description}*")
+            lines.append(f"```")
+            lines.append(block.content if block.content else "(empty)")
+            lines.append(f"```")
+            lines.append("")
+        
+        return "\n".join(lines)
     
     # ========================================================================
     # Tool Registration
