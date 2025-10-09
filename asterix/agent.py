@@ -511,6 +511,17 @@ class Agent:
             
             logger.info(f"Assistant response: {assistant_response[:100]}")
             
+            # Check context window after conversation turn
+            context_status = self._check_context_window()
+            
+            if context_status["action_needed"]:
+                logger.warning(
+                    f"Context window at {context_status['percentage']:.1f}% - "
+                    f"context extraction recommended (will be implemented in Step 4)"
+                )
+                # TODO: Step 4 - Trigger context extraction
+                # self._extract_and_archive_context()
+            
             return assistant_response
             
         except Exception as e:
@@ -620,6 +631,22 @@ class Agent:
         
         return stats
     
+    def get_context_status(self) -> Dict[str, Any]:
+        """
+        Get current context window status.
+        
+        Useful for monitoring and debugging.
+        
+        Returns:
+            Dictionary with context window information
+            
+        Example:
+            >>> status = agent.get_context_status()
+            >>> if status['exceeds_threshold']:
+            ...     print(f"Warning: Context at {status['percentage']}%")
+        """
+        return self._check_context_window()
+    
     def _trim_conversation_history(self, keep_recent: int = 10):
         """
         Trim conversation history, keeping only recent messages.
@@ -644,6 +671,111 @@ class Agent:
         self.conversation_history = self.conversation_history[-keep_recent:]
         
         logger.info(f"Trimmed conversation history from {old_count} to {len(self.conversation_history)} messages")
+    
+    def _calculate_context_tokens(self) -> int:
+        """
+        Calculate total tokens in current context.
+        
+        Context includes:
+        - System prompt (with memory blocks)
+        - Conversation history
+        - Tool schemas
+        
+        Returns:
+            Estimated total tokens
+        """
+        from .utils.tokens import count_tokens
+        
+        total_tokens = 0
+        
+        # 1. System prompt tokens
+        system_prompt = self._build_system_prompt()
+        total_tokens += count_tokens(system_prompt).tokens
+        
+        # 2. Conversation history tokens
+        for message in self.conversation_history:
+            content = message.get("content", "")
+            total_tokens += count_tokens(content).tokens
+            
+            # Add small overhead for message structure
+            total_tokens += 4
+        
+        # 3. Tool schemas tokens (rough estimate)
+        tool_schemas = self.get_tool_schemas()
+        if tool_schemas:
+            import json
+            schemas_text = json.dumps(tool_schemas)
+            total_tokens += count_tokens(schemas_text).tokens
+        
+        logger.debug(f"Total context tokens: {total_tokens}")
+        
+        return total_tokens
+    
+    def _check_context_window(self) -> Dict[str, Any]:
+        """
+        Check if context window is approaching limit.
+        
+        Model context limits:
+        - llama-3.3-70b: 8192 tokens
+        - gpt-4-turbo: 128000 tokens
+        
+        Threshold: 85% of context limit
+        
+        Returns:
+            Dictionary with context status:
+            - current_tokens: Current context size
+            - max_tokens: Model's context limit
+            - percentage: Current usage percentage
+            - exceeds_threshold: Whether 85% threshold is exceeded
+            - action_needed: Whether context extraction is needed
+        """
+        # Model context limits (tokens)
+        MODEL_CONTEXT_LIMITS = {
+            "llama-3.3-70b-versatile": 8192,
+            "llama-3.1-70b-versatile": 131072,
+            "llama-3.1-8b-instant": 131072,
+            "gpt-4-turbo": 128000,
+            "gpt-4-turbo-preview": 128000,
+            "gpt-4": 8192,
+            "gpt-3.5-turbo": 16385,
+        }
+        
+        # Get model context limit
+        model_name = self.config.llm.model
+        max_tokens = MODEL_CONTEXT_LIMITS.get(model_name, 131072)  # Default to 131072
+        
+        # Calculate current usage
+        current_tokens = self._calculate_context_tokens()
+        
+        # Calculate percentage
+        percentage = (current_tokens / max_tokens) * 100
+        
+        # Check if exceeds threshold
+        threshold_percentage = self.config.memory.context_window_threshold * 100
+        exceeds_threshold = percentage >= threshold_percentage
+        
+        status = {
+            "current_tokens": current_tokens,
+            "max_tokens": max_tokens,
+            "percentage": round(percentage, 2),
+            "threshold_percentage": threshold_percentage,
+            "exceeds_threshold": exceeds_threshold,
+            "action_needed": exceeds_threshold
+        }
+        
+        if exceeds_threshold:
+            logger.warning(
+                f"Context window at {percentage:.1f}% "
+                f"({current_tokens}/{max_tokens} tokens) - "
+                f"exceeds {threshold_percentage}% threshold"
+            )
+        else:
+            logger.debug(
+                f"Context window at {percentage:.1f}% "
+                f"({current_tokens}/{max_tokens} tokens)"
+            )
+        
+        return status
     
     def _has_tool_calls(self, llm_response) -> bool:
         """
@@ -1027,11 +1159,19 @@ class Agent:
         """
         conversation_stats = self.get_conversation_stats()
         
+        context_status = self._check_context_window()
+        
         return {
             "agent_id": self.id,
             "model": self.config.model,
             "blocks": list(self.blocks.keys()),
             "conversation": conversation_stats,
+            "context": {
+                "current_tokens": context_status["current_tokens"],
+                "max_tokens": context_status["max_tokens"],
+                "usage_percentage": context_status["percentage"],
+                "needs_extraction": context_status["action_needed"]
+            },
             "registered_tools": [tool.name for tool in self._tool_registry.get_all_tools()],
             "created_at": self.created_at.isoformat(),
             "last_updated": self.last_updated.isoformat(),
