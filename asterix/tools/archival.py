@@ -29,30 +29,17 @@ class ArchivalMemoryInsertTool(Tool):
     """
     Tool for inserting memories into long-term storage (Qdrant).
     
-    When memory blocks get full or the agent wants to remember something
-    for later retrieval, this tool stores it in Qdrant with semantic embeddings.
+    **Usage Scenarios:**
+    1. Agent/user explicitly decides to store important information permanently
+    2. Context extraction stores important facts when conversation exceeds 85% context window
     
-    The agent can later search these memories using archival_memory_search.
+    **NOT used for:**
+    - Block eviction (blocks are just summarized in-place, NOT stored in Qdrant)
     
-    Schema:
-        {
-            "name": "archival_memory_insert",
-            "description": "Store information in long-term memory",
-            "parameters": {
-                "content": "Information to store",
-                "summary": "Optional short summary (auto-generated if omitted)",
-                "importance": "Importance score 0.0-1.0 (optional)"
-            }
-        }
-    
-    Example usage by agent:
-        >>> # Agent wants to remember user preferences long-term
-        >>> archival_memory_insert(
-        ...     content="User prefers dark mode, uses VS Code, likes Python",
-        ...     summary="User preferences",
-        ...     importance=0.8
-        ... )
-        >>> # Returns: "Successfully stored memory in archival storage"
+    **How it works:**
+    - Generates embedding for the content
+    - Stores in Qdrant with metadata (summary, importance, timestamp)
+    - Agent can later retrieve using archival_memory_search
     """
     
     def __init__(self, agent: 'Agent'):
@@ -125,20 +112,15 @@ class ArchivalMemoryInsertTool(Tool):
             from ..core.embeddings import embedding_service
             from ..core.llm_manager import llm_manager
             
-            # Generate summary if not provided
+            # Use content as summary if not provided (simple truncation)
             if not summary or not summary.strip():
-                logger.debug("No summary provided, generating automatically")
-                try:
-                    # Use LLM to generate a concise summary
-                    summary_result = asyncio.run(
-                        llm_manager.summarize_text(content, max_tokens=50)
-                    )
-                    summary = summary_result.content.strip()
-                    logger.debug(f"Generated summary: {summary[:100]}")
-                except Exception as e:
-                    logger.warning(f"Failed to generate summary: {e}, using truncated content")
-                    # Fallback: use first 100 chars
-                    summary = content[:100] + "..." if len(content) > 100 else content
+                # For context extraction, content IS already the fact/summary
+                # For explicit storage, user should provide summary or we use truncated content
+                if len(content) <= 100:
+                    summary = content
+                else:
+                    summary = content[:97] + "..."
+                logger.debug(f"No summary provided, using truncated content: {summary}")
             
             # Generate embedding for the content
             logger.debug("Generating embedding for archival content")
