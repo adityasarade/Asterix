@@ -431,11 +431,7 @@ class Agent:
             self._ensure_llm_manager()
             
             # Add user message to conversation history
-            self.conversation_history.append({
-                "role": "user",
-                "content": message,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+            self._add_to_conversation_history("user", message)
             
             logger.info(f"User message: {message[:100]}")
             
@@ -508,11 +504,7 @@ class Agent:
                 assistant_response = "I need more time to process this request. Please try asking again or breaking it into smaller parts."
             
             # Add final response to conversation history
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": assistant_response,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+            self._add_to_conversation_history("assistant", assistant_response)
             
             # Update last_updated timestamp
             self.last_updated = datetime.now(timezone.utc)
@@ -581,6 +573,77 @@ class Agent:
             lines.append("")
         
         return "\n".join(lines)
+    
+    def _add_to_conversation_history(self, role: str, content: str, **metadata):
+        """
+        Add a message to conversation history with timestamp and metadata.
+        
+        Args:
+            role: Message role (user, assistant, system, tool)
+            content: Message content
+            **metadata: Additional metadata (tool_calls, tool_call_id, etc.)
+        """
+        message = {
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Add any additional metadata
+        message.update(metadata)
+        
+        self.conversation_history.append(message)
+        
+        logger.debug(f"Added {role} message to history (length: {len(self.conversation_history)})")
+    
+    def get_conversation_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about the current conversation.
+        
+        Returns:
+            Dictionary with conversation metrics
+            
+        Example:
+            >>> stats = agent.get_conversation_stats()
+            >>> print(f"Total turns: {stats['total_messages']}")
+        """
+        stats = {
+            "total_messages": len(self.conversation_history),
+            "user_messages": sum(1 for msg in self.conversation_history if msg.get("role") == "user"),
+            "assistant_messages": sum(1 for msg in self.conversation_history if msg.get("role") == "assistant"),
+            "tool_messages": sum(1 for msg in self.conversation_history if msg.get("role") == "tool"),
+        }
+        
+        # Calculate estimated token count (rough estimate: 4 chars per token)
+        total_chars = sum(len(msg.get("content", "")) for msg in self.conversation_history)
+        stats["estimated_tokens"] = total_chars // 4
+        
+        return stats
+    
+    def _trim_conversation_history(self, keep_recent: int = 10):
+        """
+        Trim conversation history, keeping only recent messages.
+        
+        Used when context window gets too large (will be called in Step 2.6).
+        
+        Args:
+            keep_recent: Number of recent conversation turns to keep
+            
+        Note:
+            This removes old messages from active context, but they should
+            be preserved in state persistence (Step 3) and extracted to
+            Qdrant before trimming (Step 4).
+        """
+        if len(self.conversation_history) <= keep_recent:
+            logger.debug(f"Conversation history size ({len(self.conversation_history)}) within limit")
+            return
+        
+        old_count = len(self.conversation_history)
+        
+        # Keep only recent messages
+        self.conversation_history = self.conversation_history[-keep_recent:]
+        
+        logger.info(f"Trimmed conversation history from {old_count} to {len(self.conversation_history)} messages")
     
     def _has_tool_calls(self, llm_response) -> bool:
         """
@@ -962,11 +1025,13 @@ class Agent:
         Returns:
             Dictionary with agent metadata and statistics
         """
+        conversation_stats = self.get_conversation_stats()
+        
         return {
             "agent_id": self.id,
             "model": self.config.model,
             "blocks": list(self.blocks.keys()),
-            "conversation_turns": len(self.conversation_history),
+            "conversation": conversation_stats,
             "registered_tools": [tool.name for tool in self._tool_registry.get_all_tools()],
             "created_at": self.created_at.isoformat(),
             "last_updated": self.last_updated.isoformat(),
