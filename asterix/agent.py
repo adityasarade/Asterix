@@ -1181,3 +1181,174 @@ class Agent:
                 "max_heartbeat_steps": self.config.max_heartbeat_steps
             }
         }
+        
+    # ========================================================================
+    # State Persistence - Serialization
+    # ========================================================================
+
+    def _to_state_dict(self) -> Dict[str, Any]:
+        """
+        Convert agent state to dictionary for serialization.
+        
+        Returns:
+            Dictionary containing complete agent state
+            
+        Note:
+            This includes:
+            - Agent metadata (id, timestamps)
+            - Configuration
+            - Memory blocks (content + metadata)
+            - Conversation history (FULL history)
+            - Registered custom tools (names only)
+            - Qdrant info (collection name, vector count estimate)
+        """
+        state = {
+            "agent_id": self.id,
+            "created_at": self.created_at.isoformat(),
+            "last_updated": self.last_updated.isoformat(),
+            
+            # Configuration
+            "config": {
+                "model": self.config.model,
+                "temperature": self.config.temperature,
+                "max_tokens": self.config.max_tokens,
+                "max_heartbeat_steps": self.config.max_heartbeat_steps,
+                
+                # Storage config
+                "storage": {
+                    "qdrant_url": self.config.storage.qdrant_url,
+                    "qdrant_collection_name": self.config.storage.qdrant_collection_name,
+                    "vector_size": self.config.storage.vector_size,
+                    "state_backend": self.config.storage.state_backend,
+                    "state_dir": self.config.storage.state_dir
+                },
+                
+                # Memory config
+                "memory": {
+                    "eviction_strategy": self.config.memory.eviction_strategy,
+                    "summary_token_limit": self.config.memory.summary_token_limit,
+                    "context_window_threshold": self.config.memory.context_window_threshold,
+                    "retrieval_k": self.config.memory.retrieval_k,
+                    "score_threshold": self.config.memory.score_threshold
+                }
+            },
+            
+            # Memory blocks
+            "blocks": {
+                name: block.to_dict()
+                for name, block in self.blocks.items()
+            },
+            
+            # FULL conversation history
+            "conversation_history": self.conversation_history.copy(),
+            
+            # Custom registered tools (names only, not the functions)
+            "registered_tools": [
+                tool.name for tool in self._tool_registry.get_all_tools()
+                if tool.name not in {
+                    "core_memory_append",
+                    "core_memory_replace",
+                    "archival_memory_insert",
+                    "archival_memory_search",
+                    "conversation_search"
+                }
+            ],
+            
+            # Qdrant info
+            "qdrant_info": {
+                "collection_name": f"asterix_memory_{self.id}",
+                "vector_count": None  # Will be populated if needed
+            }
+        }
+        
+        logger.debug(f"Serialized agent state: {len(state['conversation_history'])} messages, {len(state['blocks'])} blocks")
+        
+        return state
+
+    @classmethod
+    def _from_state_dict(cls, state: Dict[str, Any]) -> 'Agent':
+        """
+        Create agent from state dictionary.
+        
+        Args:
+            state: State dictionary from _to_state_dict()
+            
+        Returns:
+            Reconstructed Agent instance
+            
+        Note:
+            This recreates the agent with:
+            - All configuration restored
+            - Memory blocks restored
+            - Conversation history restored
+            - Custom tools NOT restored (user must re-register)
+        """
+        # Rebuild configuration
+        config_data = state["config"]
+        
+        # Create BlockConfig objects
+        blocks = {}
+        for block_name, block_data in state["blocks"].items():
+            blocks[block_name] = BlockConfig(
+                size=block_data["size_limit"],
+                priority=block_data["priority"],
+                description=block_data.get("description", ""),
+                initial_value=""  # Will be overridden below
+            )
+        
+        # Create AgentConfig
+        agent_config = AgentConfig(
+            agent_id=state["agent_id"],
+            blocks=blocks,
+            model=config_data["model"],
+            temperature=config_data["temperature"],
+            max_tokens=config_data["max_tokens"],
+            max_heartbeat_steps=config_data["max_heartbeat_steps"],
+            
+            memory=MemoryConfig(
+                eviction_strategy=config_data["memory"]["eviction_strategy"],
+                summary_token_limit=config_data["memory"]["summary_token_limit"],
+                context_window_threshold=config_data["memory"]["context_window_threshold"],
+                retrieval_k=config_data["memory"]["retrieval_k"],
+                score_threshold=config_data["memory"]["score_threshold"]
+            ),
+            
+            storage=StorageConfig(
+                qdrant_url=config_data["storage"]["qdrant_url"],
+                qdrant_collection_name=config_data["storage"]["qdrant_collection_name"],
+                vector_size=config_data["storage"]["vector_size"],
+                state_backend=config_data["storage"]["state_backend"],
+                state_dir=config_data["storage"]["state_dir"]
+            )
+        )
+        
+        # Create agent
+        agent = cls(config=agent_config)
+        
+        # Restore memory blocks (content + metadata)
+        for block_name, block_data in state["blocks"].items():
+            if block_name in agent.blocks:
+                agent.blocks[block_name] = MemoryBlock.from_dict(block_data)
+        
+        # Restore conversation history
+        agent.conversation_history = state["conversation_history"].copy()
+        
+        # Restore timestamps
+        agent.created_at = datetime.fromisoformat(state["created_at"])
+        agent.last_updated = datetime.fromisoformat(state["last_updated"])
+        
+        logger.info(
+            f"Restored agent '{agent.id}' from state: "
+            f"{len(agent.conversation_history)} messages, "
+            f"{len(agent.blocks)} blocks"
+        )
+        
+        # Log if custom tools need to be re-registered
+        custom_tools = state.get("registered_tools", [])
+        if custom_tools:
+            logger.warning(
+                f"Agent had {len(custom_tools)} custom tools registered: {custom_tools}. "
+                f"These tools are NOT automatically restored - you must re-register them."
+            )
+        
+        return agent
