@@ -115,7 +115,7 @@ class StorageConfig:
     # State persistence configuration
     state_backend: str = "json"
     state_dir: str = "./agent_states"
-    state_db: str = "agents.db"
+    state_db: str = "./agent_states/agents.db"
     
     def __post_init__(self):
         """Validate configuration values."""

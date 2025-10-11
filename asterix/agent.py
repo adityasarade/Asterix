@@ -1072,110 +1072,138 @@ class Agent:
 
     def save_state(self, filepath: Optional[str] = None):
         """
-        Save agent state to JSON file.
+        Save agent state to disk.
+        
+        Uses the configured state backend (JSON or SQLite).
         
         Args:
-            filepath: Custom filepath (uses default from config if not provided)
+            filepath: Custom filepath (only for JSON backend)
             
         Example:
+            >>> # JSON backend (default)
             >>> agent.save_state()  # Saves to ./agent_states/{agent_id}.json
-            >>> agent.save_state("my_agent.json")  # Custom path
             
-        Raises:
-            IOError: If file write fails
+            >>> # SQLite backend
+            >>> agent = Agent(..., storage=StorageConfig(state_backend="sqlite"))
+            >>> agent.save_state()  # Saves to agents.db
         """
         import json
         
-        try:
-            # Determine filepath
-            if filepath:
-                save_path = Path(filepath)
-            else:
-                # Use default from config
-                state_dir = Path(self.config.storage.state_dir)
-                save_path = state_dir / f"{self.id}.json"
+        # Check backend type
+        backend = self.config.storage.state_backend
+        
+        if backend == "sqlite":
+            # Use SQLite backend
+            from .storage.agent_state import SQLiteStateBackend
             
-            # Create directory if it doesn't exist
-            save_path.parent.mkdir(parents=True, exist_ok=True)
+            db_path = self.config.storage.state_db
+            sqlite_backend = SQLiteStateBackend(db_path)
             
-            # Serialize state
             state_dict = self._to_state_dict()
+            sqlite_backend.save(self.id, state_dict)
             
-            # Write to file with pretty formatting
-            with open(save_path, 'w', encoding='utf-8') as f:
-                json.dump(state_dict, f, indent=2, ensure_ascii=False)
+            logger.info(f"Saved agent state to SQLite database: {db_path}")
             
-            logger.info(f"Saved agent state to {save_path}")
-            
-        except Exception as e:
-            logger.error(f"Failed to save agent state: {e}")
-            raise IOError(f"Failed to save agent state: {e}")
+        else:
+            # Use JSON backend (default)
+            try:
+                # Determine filepath
+                if filepath:
+                    save_path = Path(filepath)
+                else:
+                    state_dir = Path(self.config.storage.state_dir)
+                    save_path = state_dir / f"{self.id}.json"
+                
+                # Create directory if it doesn't exist
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Serialize state
+                state_dict = self._to_state_dict()
+                
+                # Write to file
+                with open(save_path, 'w', encoding='utf-8') as f:
+                    json.dump(state_dict, f, indent=2, ensure_ascii=False)
+                
+                logger.info(f"Saved agent state to {save_path}")
+                
+            except Exception as e:
+                logger.error(f"Failed to save agent state: {e}")
+                raise IOError(f"Failed to save agent state: {e}")
 
     @classmethod
-    def load_state(cls, agent_id: str, state_dir: Optional[str] = None) -> 'Agent':
+    def load_state(cls, agent_id: str, 
+                state_dir: Optional[str] = None,
+                state_backend: str = "json",
+                state_db: str = "./agent_states/agents.db") -> 'Agent':
         """
-        Load agent state from JSON file.
+        Load agent state from storage.
         
         Args:
             agent_id: Agent identifier
-            state_dir: Directory containing state files (uses default if not provided)
+            state_dir: Directory for JSON files (JSON backend only)
+            state_backend: "json" or "sqlite"
+            state_db: Database path (SQLite backend only)
             
         Returns:
             Loaded Agent instance
             
         Example:
+            >>> # JSON backend
             >>> agent = Agent.load_state("my_agent")
-            >>> agent.chat("What were we discussing?")
             
-        Raises:
-            FileNotFoundError: If state file doesn't exist
-            ValueError: If state file is invalid
+            >>> # SQLite backend
+            >>> agent = Agent.load_state("my_agent", state_backend="sqlite")
         """
         import json
         
-        try:
-            # Determine filepath
-            if state_dir:
-                load_path = Path(state_dir) / f"{agent_id}.json"
-            else:
-                # Use default
-                load_path = Path("./agent_states") / f"{agent_id}.json"
+        if state_backend == "sqlite":
+            # Use SQLite backend
+            from .storage.agent_state import SQLiteStateBackend
             
-            # Check if file exists
-            if not load_path.exists():
-                raise FileNotFoundError(
-                    f"State file not found: {load_path}\n"
-                    f"Make sure the agent was saved previously with save_state()"
-                )
+            sqlite_backend = SQLiteStateBackend(state_db)
+            state_dict = sqlite_backend.load(agent_id)
             
-            # Read state from file
-            with open(load_path, 'r', encoding='utf-8') as f:
-                state_dict = json.load(f)
-            
-            # Validate state structure
-            required_keys = ["agent_id", "config", "blocks", "conversation_history"]
-            missing_keys = [key for key in required_keys if key not in state_dict]
-            
-            if missing_keys:
-                raise ValueError(
-                    f"Invalid state file: missing required keys {missing_keys}"
-                )
-            
-            # Deserialize and create agent
             agent = cls._from_state_dict(state_dict)
-            
-            logger.info(f"Loaded agent state from {load_path}")
+            logger.info(f"Loaded agent from SQLite database: {state_db}")
             
             return agent
             
-        except FileNotFoundError:
-            raise
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in state file: {e}")
-            raise ValueError(f"State file contains invalid JSON: {e}")
-        except Exception as e:
-            logger.error(f"Failed to load agent state: {e}")
-            raise
+        else:
+            # Use JSON backend (existing code)
+            try:
+                if state_dir:
+                    load_path = Path(state_dir) / f"{agent_id}.json"
+                else:
+                    load_path = Path("./agent_states") / f"{agent_id}.json"
+                
+                if not load_path.exists():
+                    raise FileNotFoundError(
+                        f"State file not found: {load_path}\n"
+                        f"Make sure the agent was saved previously with save_state()"
+                    )
+                
+                with open(load_path, 'r', encoding='utf-8') as f:
+                    state_dict = json.load(f)
+                
+                required_keys = ["agent_id", "config", "blocks", "conversation_history"]
+                missing_keys = [key for key in required_keys if key not in state_dict]
+                
+                if missing_keys:
+                    raise ValueError(f"Invalid state file: missing keys {missing_keys}")
+                
+                agent = cls._from_state_dict(state_dict)
+                logger.info(f"Loaded agent state from {load_path}")
+                
+                return agent
+                
+            except FileNotFoundError:
+                raise
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON in state file: {e}")
+                raise ValueError(f"State file contains invalid JSON: {e}")
+            except Exception as e:
+                logger.error(f"Failed to load agent state: {e}")
+                raise
 
     @classmethod
     def load_state_from_file(cls, filepath: str) -> 'Agent':
