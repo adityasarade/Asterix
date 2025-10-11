@@ -17,7 +17,7 @@ except ImportError:
     TIKTOKEN_AVAILABLE = False
     logging.warning("tiktoken not available, using approximate token counting")
 
-from .config import get_config
+from ..core.config import get_config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class TokenCounter:
     """
     
     def __init__(self):
-        self.config = get_config()
+        self.config = get_config_manager()
         self._encoders: Dict[str, any] = {}
         self._load_encoders()
     

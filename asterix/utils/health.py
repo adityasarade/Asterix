@@ -18,16 +18,26 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
 
-from letta_client import Letta
+# from letta_client import Letta
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import ResponseHandlingException
 import openai
 from sentence_transformers import SentenceTransformer
 
-from .config import get_config, ServiceStatus
+from ..core.config import get_config_manager
 
 logger = logging.getLogger(__name__)
 
+from dataclasses import dataclass
+
+@dataclass
+class ServiceStatus:
+    """Status information for a service"""
+    name: str
+    available: bool
+    error: Optional[str] = None
+    last_check: Optional[str] = None
+    response_time: Optional[float] = None
 
 class ServiceType(Enum):
     """Service type enumeration"""
@@ -63,7 +73,7 @@ class ServiceHealthMonitor:
     """
     
     def __init__(self):
-        self.config = get_config()
+        self.config = get_config_manager()
         self._service_statuses: Dict[str, ServiceStatus] = {}
         self._last_check_times: Dict[str, float] = {}
         self._check_intervals = {

@@ -20,12 +20,10 @@ import openai
 import httpx
 from groq import Groq
 
-from ..utils.config import get_config
-from ..utils.health import health_monitor
-from ..utils.tokens import count_tokens
+from .config import get_config_manager
+# from ..utils.tokens import count_tokens
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class LLMResponse:
@@ -65,80 +63,42 @@ class LLMProviderManager:
     
     def __init__(self):
         """Initialize the LLM provider manager."""
-        self.config = get_config()
+        self.config = get_config_manager()
         
-        # Provider configurations
-        self._groq_config = self.config.get_llm_config("groq")
-        self._openai_config = self.config.get_llm_config("openai")
+        # Provider clients - initialize to None
+        self._groq_client = None
+        self._openai_client = None
         
-        # Provider clients
-        self._groq_client: Optional[Groq] = None
-        self._openai_client: Optional[openai.OpenAI] = None
+        # Get API keys from environment
+        import os
+        self._groq_api_key = os.getenv("GROQ_API_KEY")
+        self._openai_api_key = os.getenv("OPENAI_API_KEY")
         
-        # Provider selection
-        self._primary_provider = self.config.get_yaml_config(
-            "agent_config.yaml", 
-            "agent.llm.primary_provider", 
-            "groq"
-        )
-        self._fallback_provider = self.config.get_yaml_config(
-            "agent_config.yaml", 
-            "agent.llm.fallback_provider", 
-            "openai"
-        )
-        
-        # Health tracking
-        self._provider_health = {}
-        self._last_health_check = 0
-        self._health_check_interval = 45  # seconds
-        self._provider_failures = {"groq": 0, "openai": 0}
-        self._max_failures = 3
+        # Provider selection (simplified - no health checks for now)
+        self._primary_provider = "groq"
+        self._fallback_provider = "openai"
         
         # Performance tracking
         self._operation_count = {"groq": 0, "openai": 0}
         self._total_processing_time = {"groq": 0.0, "openai": 0.0}
         self._total_tokens = {"groq": 0, "openai": 0}
         self._error_count = {"groq": 0, "openai": 0}
+        self._provider_failures = {"groq": 0, "openai": 0}
+        self._max_failures = 3
     
     async def _ensure_clients_initialized(self):
         """Ensure LLM provider clients are initialized."""
         # Initialize Groq client
-        if self._groq_client is None and self._groq_config.api_key:
-            self._groq_client = Groq(api_key=self._groq_config.api_key)
+        if self._groq_client is None and self._groq_api_key:
+            self._groq_client = Groq(api_key=self._groq_api_key)
         
         # Initialize OpenAI client
-        if self._openai_client is None and self._openai_config.api_key:
-            self._openai_client = openai.OpenAI(api_key=self._openai_config.api_key)
-    
-    async def _check_provider_health(self) -> Dict[str, bool]:
-        """
-        Check health of LLM providers.
-        
-        Returns:
-            Dictionary mapping provider names to health status
-        """
-        current_time = time.time()
-        if (current_time - self._last_health_check) < self._health_check_interval:
-            return self._provider_health
-        
-        health_status = {}
-        
-        # Check Groq health
-        groq_health = await health_monitor.check_groq_health()
-        health_status["groq"] = groq_health.status == "healthy"
-        
-        # Check OpenAI health
-        openai_health = await health_monitor.check_openai_health("llm")
-        health_status["openai"] = openai_health.status == "healthy"
-        
-        self._provider_health = health_status
-        self._last_health_check = current_time
-        
-        return health_status
+        if self._openai_client is None and self._openai_api_key:
+            self._openai_client = openai.OpenAI(api_key=self._openai_api_key)
     
     async def _select_provider(self, force_provider: Optional[str] = None) -> str:
         """
-        Select the best available provider based on health and failure rates.
+        Select provider (simplified - no health checks).
         
         Args:
             force_provider: Force use of specific provider
@@ -149,26 +109,18 @@ class LLMProviderManager:
         if force_provider:
             return force_provider
         
-        health_status = await self._check_provider_health()
-        
-        # Check if primary provider is healthy and hasn't failed too much
-        if (health_status.get(self._primary_provider, False) and 
-            self._provider_failures[self._primary_provider] < self._max_failures):
+        # Check failure counts
+        if self._provider_failures[self._primary_provider] < self._max_failures:
             return self._primary_provider
         
         # Fall back to fallback provider
-        if (health_status.get(self._fallback_provider, False) and 
-            self._provider_failures[self._fallback_provider] < self._max_failures):
-            logger.warning(f"Primary provider {self._primary_provider} unavailable, using fallback {self._fallback_provider}")
+        if self._provider_failures[self._fallback_provider] < self._max_failures:
+            logger.warning(f"Primary provider {self._primary_provider} has failed too many times, using fallback")
             return self._fallback_provider
         
-        # If both have issues, reset failure counts and try primary
-        if (self._provider_failures[self._primary_provider] >= self._max_failures and
-            self._provider_failures[self._fallback_provider] >= self._max_failures):
-            logger.warning("Both providers have failed multiple times, resetting failure counts")
-            self._provider_failures = {"groq": 0, "openai": 0}
-        
-        # Default to primary provider
+        # Reset and try again
+        logger.warning("Both providers have failed multiple times, resetting failure counts")
+        self._provider_failures = {"groq": 0, "openai": 0}
         return self._primary_provider
     
     async def _call_groq(self, messages: List[LLMMessage], 
@@ -200,10 +152,10 @@ class LLMProviderManager:
             
             # Make API call
             api_params = {
-                "model": self._groq_config.model,
+                "model": "llama-3.3-70b-versatile",
                 "messages": groq_messages,
-                "temperature": temperature or self._groq_config.temperature,
-                "max_tokens": max_tokens or self._groq_config.max_tokens,
+                "temperature": temperature or 0.1,
+                "max_tokens": max_tokens or 1000,
                 "stream": False
             }
             
@@ -238,7 +190,7 @@ class LLMProviderManager:
             
             result = LLMResponse(
                 content=content,
-                model=self._groq_config.model,
+                model="llama-3.3-70b-versatile",
                 provider="groq",
                 usage=usage,
                 processing_time=processing_time,
@@ -284,10 +236,10 @@ class LLMProviderManager:
             
             # Make API call
             api_params = {
-                "model": self._openai_config.model,
+                "model": "gpt-4-turbo-preview",
                 "messages": openai_messages,
-                "temperature": temperature or self._openai_config.temperature,
-                "max_tokens": max_tokens or self._openai_config.max_tokens,
+                "temperature": temperature or 0.1,
+                "max_tokens": max_tokens or 1000,
                 "stream": False
             }
             
@@ -322,7 +274,7 @@ class LLMProviderManager:
             
             result = LLMResponse(
                 content=content,
-                model=self._openai_config.model,
+                model="gpt-4-turbo-preview",
                 provider="openai",
                 usage=usage,
                 processing_time=processing_time,
@@ -545,44 +497,6 @@ Keywords:"""
             }
         
         return metrics
-    
-    async def test_provider(self, provider: str) -> Dict[str, Any]:
-        """
-        Test a specific LLM provider.
-        
-        Args:
-            provider: Provider name to test
-            
-        Returns:
-            Test result with performance metrics
-        """
-        test_message = "Hello! Please respond with exactly: 'Test successful'"
-        
-        try:
-            start_time = time.time()
-            response = await self.complete([LLMMessage(role="user", content=test_message)], provider=provider)
-            total_time = time.time() - start_time
-            
-            return {
-                "provider": provider,
-                "status": "healthy",
-                "response_time_ms": round(total_time * 1000, 2),
-                "model": response.model,
-                "usage": response.usage,
-                "response_content": response.content[:100] + "..." if len(response.content) > 100 else response.content
-            }
-            
-        except Exception as e:
-            return {
-                "provider": provider,
-                "status": "unhealthy",
-                "error": str(e),
-                "response_time_ms": None,
-                "model": None,
-                "usage": None,
-                "response_content": None
-            }
-
 
 # Global LLM manager instance
 llm_manager = LLMProviderManager()

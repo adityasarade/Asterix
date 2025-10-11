@@ -21,7 +21,7 @@ import openai
 from sentence_transformers import SentenceTransformer
 import numpy as np
 
-from ..utils.config import get_config
+from .config import get_config_manager
 from ..utils.health import health_monitor
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ class EmbeddingServiceWrapper:
     
     def __init__(self):
         """Initialize the embedding service wrapper."""
-        self.config = get_config()
+        self.config = get_config_manager()
         self.embedding_config = self.config.get_embedding_config()
         
         # Provider clients

@@ -209,17 +209,20 @@ def generate_tool_schema(func: Callable,
         if param.default == inspect.Parameter.empty:
             required.append(param_name)
     
-    # Build complete schema
+    # Build complete schema in OpenAI function calling format
     schema = {
-        "name": tool_name,
-        "description": tool_description,
-        "parameters": {
-            "type": "object",
-            "properties": properties,
-            "required": required
+        "type": "function",
+        "function": {
+            "name": tool_name,
+            "description": tool_description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required
+            }
         }
     }
-    
+
     return schema
 
 
@@ -266,10 +269,10 @@ class Tool:
     """
     
     def __init__(self, 
-                 name: str,
-                 description: str,
-                 func: Optional[Callable] = None,
-                 schema: Optional[Dict[str, Any]] = None):
+                name: str,
+                description: str,
+                func: Optional[Callable] = None,
+                schema: Optional[Dict[str, Any]] = None):
         """
         Initialize a tool.
         
@@ -285,18 +288,29 @@ class Tool:
         
         # Generate or use provided schema
         if schema:
-            self.schema = schema
+            # Schema already provided - ensure it has the correct format
+            if "type" not in schema:
+                # Wrap it in OpenAI format
+                self.schema = {
+                    "type": "function",
+                    "function": schema
+                }
+            else:
+                self.schema = schema
         elif func:
             self.schema = generate_tool_schema(func, name, description)
         else:
             # Default schema - will be overridden by subclasses
             self.schema = {
-                "name": name,
-                "description": description,
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
                 }
             }
         

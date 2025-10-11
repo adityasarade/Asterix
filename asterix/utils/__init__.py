@@ -4,16 +4,16 @@ MemGPT Utilities Package
 Core utilities for configuration, health monitoring, and token management.
 """
 
-from .config import (
-    get_config,
-    ConfigurationManager,
-    LLMConfig,
-    EmbeddingConfig,
-    QdrantConfig,
-    MemoryConfig,
-    ControllerConfig,
-    ServiceStatus
-)
+# from .config import (
+#     get_config,
+#     ConfigurationManager,
+#     LLMConfig,
+#     EmbeddingConfig,
+#     QdrantConfig,
+#     MemoryConfig,
+#     ControllerConfig,
+#     ServiceStatus
+# )
 
 from .health import (
     ServiceHealthMonitor,

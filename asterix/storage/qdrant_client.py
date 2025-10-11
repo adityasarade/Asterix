@@ -21,7 +21,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
-from ..utils.config import get_config
+from ..core.config import get_config_manager
 from ..utils.health import health_monitor
 from ..utils.tokens import count_tokens
 
@@ -71,7 +71,7 @@ class QdrantCloudWrapper:
     
     def __init__(self):
         """Initialize the Qdrant Cloud wrapper."""
-        self.config = get_config()
+        self.config = get_config_manager()
         self.qdrant_config = self.config.get_qdrant_config()
         self._client: Optional[QdrantClient] = None
         self._connected = False
