@@ -1067,12 +1067,12 @@ class Agent:
         return self._tool_registry.get_all_tools()
     
     # ========================================================================
-    # State Persistence (Stubs - will implement in Step 3)
+    # State Persistence - JSON Backend
     # ========================================================================
-    
+
     def save_state(self, filepath: Optional[str] = None):
         """
-        Save agent state to disk.
+        Save agent state to JSON file.
         
         Args:
             filepath: Custom filepath (uses default from config if not provided)
@@ -1080,23 +1080,41 @@ class Agent:
         Example:
             >>> agent.save_state()  # Saves to ./agent_states/{agent_id}.json
             >>> agent.save_state("my_agent.json")  # Custom path
-        
-        Note:
-            Full implementation coming in Step 3 (State Persistence)
+            
+        Raises:
+            IOError: If file write fails
         """
-        # TODO: Implement in Step 3
-        logger.warning("save_state() not fully implemented yet - coming in Step 3")
+        import json
         
-        if filepath:
-            logger.info(f"Would save to: {filepath}")
-        else:
-            default_path = Path(self.config.storage.state_dir) / f"{self.id}.json"
-            logger.info(f"Would save to: {default_path}")
-    
+        try:
+            # Determine filepath
+            if filepath:
+                save_path = Path(filepath)
+            else:
+                # Use default from config
+                state_dir = Path(self.config.storage.state_dir)
+                save_path = state_dir / f"{self.id}.json"
+            
+            # Create directory if it doesn't exist
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Serialize state
+            state_dict = self._to_state_dict()
+            
+            # Write to file with pretty formatting
+            with open(save_path, 'w', encoding='utf-8') as f:
+                json.dump(state_dict, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"Saved agent state to {save_path}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save agent state: {e}")
+            raise IOError(f"Failed to save agent state: {e}")
+
     @classmethod
     def load_state(cls, agent_id: str, state_dir: Optional[str] = None) -> 'Agent':
         """
-        Load agent state from disk.
+        Load agent state from JSON file.
         
         Args:
             agent_id: Agent identifier
@@ -1108,15 +1126,91 @@ class Agent:
         Example:
             >>> agent = Agent.load_state("my_agent")
             >>> agent.chat("What were we discussing?")
-        
-        Note:
-            Full implementation coming in Step 3 (State Persistence)
+            
+        Raises:
+            FileNotFoundError: If state file doesn't exist
+            ValueError: If state file is invalid
         """
-        # TODO: Implement in Step 3
-        logger.warning("load_state() not fully implemented yet - coming in Step 3")
+        import json
         
-        # For now, just create a new agent with that ID
-        return cls(agent_id=agent_id)
+        try:
+            # Determine filepath
+            if state_dir:
+                load_path = Path(state_dir) / f"{agent_id}.json"
+            else:
+                # Use default
+                load_path = Path("./agent_states") / f"{agent_id}.json"
+            
+            # Check if file exists
+            if not load_path.exists():
+                raise FileNotFoundError(
+                    f"State file not found: {load_path}\n"
+                    f"Make sure the agent was saved previously with save_state()"
+                )
+            
+            # Read state from file
+            with open(load_path, 'r', encoding='utf-8') as f:
+                state_dict = json.load(f)
+            
+            # Validate state structure
+            required_keys = ["agent_id", "config", "blocks", "conversation_history"]
+            missing_keys = [key for key in required_keys if key not in state_dict]
+            
+            if missing_keys:
+                raise ValueError(
+                    f"Invalid state file: missing required keys {missing_keys}"
+                )
+            
+            # Deserialize and create agent
+            agent = cls._from_state_dict(state_dict)
+            
+            logger.info(f"Loaded agent state from {load_path}")
+            
+            return agent
+            
+        except FileNotFoundError:
+            raise
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in state file: {e}")
+            raise ValueError(f"State file contains invalid JSON: {e}")
+        except Exception as e:
+            logger.error(f"Failed to load agent state: {e}")
+            raise
+
+    @classmethod
+    def load_state_from_file(cls, filepath: str) -> 'Agent':
+        """
+        Load agent state from a specific file path.
+        
+        Args:
+            filepath: Full path to state file
+            
+        Returns:
+            Loaded Agent instance
+            
+        Example:
+            >>> agent = Agent.load_state_from_file("./backups/my_agent_2025.json")
+        """
+        import json
+        
+        try:
+            load_path = Path(filepath)
+            
+            if not load_path.exists():
+                raise FileNotFoundError(f"State file not found: {load_path}")
+            
+            with open(load_path, 'r', encoding='utf-8') as f:
+                state_dict = json.load(f)
+            
+            agent = cls._from_state_dict(state_dict)
+            
+            logger.info(f"Loaded agent state from {load_path}")
+            
+            return agent
+            
+        except Exception as e:
+            logger.error(f"Failed to load agent state from {filepath}: {e}")
+            raise
     
     @classmethod
     def from_yaml(cls, filename: str, config_dir: Optional[str] = None, **overrides) -> 'Agent':
