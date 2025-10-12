@@ -1470,7 +1470,7 @@ class Agent:
         if custom_tools:
             logger.warning(
                 f"Agent had {len(custom_tools)} custom tools registered: {custom_tools}. "
-                f"These tools are NOT automatically restored - you must re-register them."
+                f"These tools are NOT automatically restored - you must re-register them!"
             )
         
         return agent
