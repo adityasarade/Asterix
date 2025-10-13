@@ -932,6 +932,8 @@ class Agent:
         logger.info("Starting context extraction and archival process")
         
         try:
+            # Ensure LLM manager is initialized before using it
+            self._ensure_llm_manager()
             # 1. Identify which messages will be trimmed
             keep_recent = 10
             total_messages = len(self.conversation_history)
