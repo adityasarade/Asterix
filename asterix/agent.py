@@ -316,10 +316,9 @@ class Agent:
         self.blocks[block_name].update_content(content)
         self.last_updated = datetime.now(timezone.utc)
         
-        # Check if block exceeds token limit (Step 4.1)
+        # Check if block exceeds token limit and evict if needed (Step 4.1)
         if self._check_block_eviction(block_name):
-            logger.info(f"Block '{block_name}' needs eviction - summarization will be triggered")
-            # TODO: Step 4.1b - Trigger summarization and replacement
+            self._evict_memory_block(block_name)
         
         logger.debug(f"Updated block '{block_name}'")
     
@@ -345,8 +344,7 @@ class Agent:
         
         # Check if block exceeds token limit (Step 4.1)
         if self._check_block_eviction(block_name):
-            logger.info(f"Block '{block_name}' needs eviction - summarization will be triggered")
-            # TODO: Step 4.1b - Trigger summarization and replacement
+            self._evict_memory_block(block_name)
         
         logger.debug(f"Appended to block '{block_name}'")
     
@@ -371,6 +369,97 @@ class Agent:
             )
         
         return exceeds_limit
+    
+    def _evict_memory_block(self, block_name: str):
+        """
+        Evict (summarize and replace) a memory block that exceeds its token limit.
+        
+        This is Step 4.1's local summarization - it does NOT store in Qdrant.
+        The block content is replaced in-place with a concise summary.
+        
+        Args:
+            block_name: Name of the block to evict
+        """
+        block = self.blocks[block_name]
+        original_content = block.content
+        original_tokens = block.tokens
+        
+        logger.info(
+            f"Starting eviction for block '{block_name}': "
+            f"{original_tokens} tokens → target {self.config.memory.summary_token_limit} tokens"
+        )
+        
+        try:
+            # Ensure LLM manager is initialized
+            self._ensure_llm_manager()
+            
+            # Build summarization prompt
+            summary_prompt = f"""Summarize the following content concisely in approximately {self.config.memory.summary_token_limit} tokens or less.
+    Focus on the most important information. Be clear and direct.
+
+    Content to summarize:
+    {original_content}
+
+    Concise summary:"""
+            
+            # Import LLMMessage for formatting
+            from .core.llm_manager import LLMMessage
+            import asyncio
+            
+            # Call LLM for summarization
+            logger.debug(f"Requesting summary from LLM for block '{block_name}'")
+            response = asyncio.run(
+                self._llm_manager.complete(
+                    messages=[LLMMessage(role="user", content=summary_prompt)],
+                    temperature=0.1,  # Low temperature for consistent summaries
+                    max_tokens=self.config.memory.summary_token_limit + 50  # Small buffer
+                )
+            )
+            
+            summary = response.content.strip()
+            
+            # Validate summary is actually shorter
+            summary_token_count = count_tokens(summary).tokens
+            
+            if summary_token_count >= original_tokens:
+                logger.warning(
+                    f"Summary ({summary_token_count} tokens) not shorter than original ({original_tokens} tokens). "
+                    f"Using truncated version instead."
+                )
+                # Fallback: just truncate to fit
+                from .utils.tokens import truncate_to_tokens
+                summary = truncate_to_tokens(
+                    original_content, 
+                    self.config.memory.summary_token_limit,
+                    preserve_end=False
+                )
+                summary_token_count = count_tokens(summary).tokens
+            
+            # Replace block content with summary
+            block.update_content(summary)
+            
+            logger.info(
+                f"Eviction complete for block '{block_name}': "
+                f"{original_tokens} → {summary_token_count} tokens "
+                f"({summary_token_count / original_tokens * 100:.1f}% of original)"
+            )
+            
+            logger.debug(f"Summary preview: {summary[:100]}...")
+            
+        except Exception as e:
+            logger.error(f"Failed to evict block '{block_name}': {e}")
+            # Fallback: truncate without summarization
+            logger.warning(f"Falling back to truncation for block '{block_name}'")
+            
+            from .utils.tokens import truncate_to_tokens
+            truncated = truncate_to_tokens(
+                original_content,
+                self.config.memory.summary_token_limit,
+                preserve_end=False
+            )
+            block.update_content(truncated)
+            
+            logger.info(f"Truncated block '{block_name}' to {block.tokens} tokens")
     
     def get_block_info(self) -> Dict[str, Dict[str, Any]]:
         """
