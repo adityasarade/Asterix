@@ -650,14 +650,14 @@ class Agent:
             
             # Check context window after conversation turn
             context_status = self._check_context_window()
-            
+
             if context_status["action_needed"]:
                 logger.warning(
                     f"Context window at {context_status['percentage']:.1f}% - "
-                    f"context extraction recommended (will be implemented in Step 4)"
+                    f"triggering context extraction"
                 )
-                # TODO: Step 4 - Trigger context extraction
-                # self._extract_and_archive_context()
+                # Step 4.2 - Extract and archive context
+                self._extract_and_archive_context()
             
             return assistant_response
             
@@ -913,6 +913,256 @@ class Agent:
             )
         
         return status
+    
+    def _extract_and_archive_context(self):
+        """
+        Extract important facts from conversation that's about to be trimmed.
+        
+        Called when context window reaches 85% threshold.
+        
+        Process:
+        1. Identify messages that will be trimmed (all except recent 10)
+        2. Extract facts from those OLD messages (they're about to disappear)
+        3. Store extracted facts in Qdrant via archival_memory_insert
+        4. Trim conversation to keep only recent 10 turns
+        
+        This preserves information before it's deleted from active context.
+        Key insight: Extract from what's LEAVING context, not what's STAYING.
+        """
+        logger.info("Starting context extraction and archival process")
+        
+        try:
+            # 1. Identify which messages will be trimmed
+            keep_recent = 10
+            total_messages = len(self.conversation_history)
+            
+            if total_messages <= keep_recent:
+                logger.info(f"Only {total_messages} messages, no extraction needed")
+                return
+            
+            # Messages that will be DELETED (extract facts from these before they're gone)
+            messages_to_archive = self.conversation_history[:-keep_recent]
+            
+            logger.info(
+                f"Extracting facts from {len(messages_to_archive)} old messages "
+                f"(keeping recent {keep_recent} in active context)"
+            )
+            
+            # 2. Also include memory blocks in extraction
+            memory_blocks_content = {
+                name: block.content 
+                for name, block in self.blocks.items() 
+                if block.content.strip()  # Only non-empty blocks
+            }
+            
+            # 3. Build extraction prompt from OLD messages (about to be deleted)
+            extraction_prompt = self._build_extraction_prompt(
+                messages_to_archive,  # Extract from OLD messages
+                memory_blocks_content
+            )
+            
+            # 4. Call LLM to extract facts
+            logger.debug("Requesting fact extraction from LLM")
+            
+            from .core.llm_manager import LLMMessage
+            import asyncio
+            import json
+            
+            response = asyncio.run(
+                self._llm_manager.complete(
+                    messages=[LLMMessage(role="user", content=extraction_prompt)],
+                    temperature=0.1,  # Low temperature for consistent extraction
+                    max_tokens=1500  # Increased for more facts
+                )
+            )
+            
+            # 5. Parse extracted facts
+            try:
+                # LLM should return JSON array of facts
+                facts_text = response.content.strip()
+                
+                # Handle markdown code blocks if present
+                if facts_text.startswith("```json"):
+                    facts_text = facts_text.split("```json")[1].split("```")[0].strip()
+                elif facts_text.startswith("```"):
+                    facts_text = facts_text.split("```")[1].split("```")[0].strip()
+                
+                facts = json.loads(facts_text)
+                
+                if not isinstance(facts, list):
+                    logger.error(f"Expected list of facts, got: {type(facts)}")
+                    facts = []  # Continue with empty list rather than failing
+                
+                logger.info(f"LLM extracted {len(facts)} facts from old context")
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse extracted facts as JSON: {e}")
+                logger.debug(f"LLM response preview: {response.content[:200]}")
+                facts = []  # Continue with empty list
+            
+            # 6. Store each fact in Qdrant via archival_memory_insert
+            stored_count = 0
+            failed_count = 0
+            
+            for i, fact in enumerate(facts, 1):
+                if not isinstance(fact, dict):
+                    logger.warning(f"Skipping invalid fact #{i}: {fact}")
+                    failed_count += 1
+                    continue
+                
+                content = fact.get("content", "")
+                fact_type = fact.get("type", "extracted_fact")
+                importance = fact.get("importance", 0.5)
+                
+                if not content or not content.strip():
+                    logger.warning(f"Skipping empty fact #{i}")
+                    failed_count += 1
+                    continue
+                
+                # Validate importance is in range
+                if not isinstance(importance, (int, float)):
+                    importance = 0.5
+                importance = max(0.0, min(1.0, float(importance)))
+                
+                try:
+                    # Use the archival_memory_insert tool
+                    insert_tool = self.get_tool("archival_memory_insert")
+                    
+                    if not insert_tool:
+                        logger.error("archival_memory_insert tool not available")
+                        break
+                    
+                    # Generate a concise summary (first 100 chars)
+                    summary = content[:100] + "..." if len(content) > 100 else content
+                    
+                    result = insert_tool.execute(
+                        content=content,
+                        summary=summary,
+                        importance=importance
+                    )
+                    
+                    if result.status.value == "success":
+                        stored_count += 1
+                        logger.debug(f"Stored fact {i}/{len(facts)}: {content[:60]}...")
+                    else:
+                        failed_count += 1
+                        logger.warning(f"Failed to store fact #{i}: {result.error}")
+                        
+                except Exception as e:
+                    failed_count += 1
+                    logger.error(f"Error storing fact #{i} in archival: {e}")
+            
+            if stored_count > 0:
+                logger.info(
+                    f"Successfully stored {stored_count}/{len(facts)} facts in Qdrant "
+                    f"({failed_count} failed)"
+                )
+            else:
+                logger.warning(f"No facts were stored (extracted {len(facts)}, all failed)")
+            
+            # 7. Trim conversation history (keep recent 10 turns)
+            old_count = len(self.conversation_history)
+            self._trim_conversation_history(keep_recent=keep_recent)
+            new_count = len(self.conversation_history)
+            
+            logger.info(
+                f"Context extraction complete: "
+                f"{stored_count} facts archived to Qdrant, "
+                f"conversation trimmed from {old_count} to {new_count} messages"
+            )
+            
+            # Update last_updated timestamp
+            self.last_updated = datetime.now(timezone.utc)
+            
+        except Exception as e:
+            logger.error(f"Context extraction failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # Don't raise - extraction failure shouldn't crash the agent
+            # Just log the error and continue
+
+    def _build_extraction_prompt(self, 
+                                conversation: List[Dict[str, Any]], 
+                                memory_blocks: Dict[str, str]) -> str:
+        """
+        Build prompt for LLM to extract important facts.
+        
+        Args:
+            conversation: Conversation turns to extract from (typically old messages)
+            memory_blocks: Current memory blocks content
+            
+        Returns:
+            Extraction prompt string
+        """
+        prompt_lines = [
+            "You are extracting important facts from conversation history that is about to be archived.",
+            "",
+            "Extract ONLY facts that should be remembered long-term:",
+            "✓ User preferences, habits, and settings",
+            "✓ Decisions and commitments made",
+            "✓ Important requirements and constraints",
+            "✓ Goals, intentions, and plans",
+            "✓ Key context needed for future conversations",
+            "",
+            "DO NOT extract:",
+            "✗ Casual greetings or pleasantries",
+            "✗ Temporary/one-time information",
+            "✗ General knowledge or common facts",
+            "✗ Redundant information already captured",
+            "",
+            "Return ONLY a valid JSON array (no other text):",
+            "[",
+            '  {"content": "User prefers Python over JavaScript", "type": "preference", "importance": 0.8},',
+            '  {"content": "Working on authentication module review", "type": "goal", "importance": 0.7},',
+            '  ...',
+            "]",
+            "",
+            "Types: preference, fact, goal, decision",
+            "Importance: 0.0 (low) to 1.0 (high)",
+            "",
+            "---",
+            "",
+            "# MEMORY BLOCKS TO CONSIDER",
+            ""
+        ]
+        
+        # Add memory blocks (these provide context but don't need extraction)
+        if memory_blocks:
+            for block_name, content in memory_blocks.items():
+                prompt_lines.append(f"## {block_name}")
+                # Truncate long blocks for prompt efficiency
+                truncated = content[:400] + "..." if len(content) > 400 else content
+                prompt_lines.append(truncated)
+                prompt_lines.append("")
+        else:
+            prompt_lines.append("(No memory blocks)")
+            prompt_lines.append("")
+        
+        prompt_lines.append("# CONVERSATION HISTORY TO EXTRACT FROM")
+        prompt_lines.append("")
+        
+        # Add conversation turns (these are what we're extracting from)
+        if conversation:
+            for msg in conversation:
+                role = msg.get("role", "unknown").upper()
+                content = msg.get("content", "")
+                
+                # Truncate very long messages
+                if len(content) > 300:
+                    content = content[:297] + "..."
+                
+                prompt_lines.append(f"{role}: {content}")
+        else:
+            prompt_lines.append("(No conversation)")
+        
+        prompt_lines.extend([
+            "",
+            "---",
+            "",
+            "Extract important facts as JSON array:"
+        ])
+        
+        return "\n".join(prompt_lines)
     
     def _has_tool_calls(self, llm_response) -> bool:
         """

@@ -21,10 +21,6 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
-from ..core.config import get_config_manager
-from ..utils.health import health_monitor
-from ..utils.tokens import count_tokens
-
 logger = logging.getLogger(__name__)
 
 
@@ -71,8 +67,19 @@ class QdrantCloudWrapper:
     
     def __init__(self):
         """Initialize the Qdrant Cloud wrapper."""
-        self.config = get_config_manager()
-        self.qdrant_config = self.config.get_qdrant_config()
+        # Get Qdrant config from environment
+        import os
+        
+        # Default configuration from environment variables
+        self.qdrant_config = type('QdrantConfig', (), {
+            'url': os.getenv('QDRANT_URL', ''),
+            'api_key': os.getenv('QDRANT_API_KEY', ''),
+            'collection_name': os.getenv('QDRANT_COLLECTION_NAME', 'asterix_memory'),
+            'vector_size': 1536,  # Default for OpenAI embeddings
+            'timeout': 30,
+            'auto_create': True
+        })()
+        
         self._client: Optional[QdrantClient] = None
         self._connected = False
         self._collection_exists = False
@@ -94,16 +101,9 @@ class QdrantCloudWrapper:
         Returns:
             True if connected and healthy, False otherwise
         """
-        # Check if we need a health check
+        # Skip health check for now (simplified for Step 4.2)
         current_time = time.time()
-        if (current_time - self._last_health_check) > self._health_check_interval:
-            health_result = await health_monitor.check_qdrant_health()
-            self._last_health_check = current_time
-            
-            if health_result.status != "healthy":
-                logger.error(f"Qdrant health check failed: {health_result.error}")
-                self._connected = False
-                return False
+        self._last_health_check = current_time
         
         # Try to connect if not connected
         if not self._connected or self._client is None:
@@ -193,24 +193,17 @@ class QdrantCloudWrapper:
             True if creation successful
         """
         try:
-            # Get service config for advanced settings
-            service_config = self.config.get_yaml_config(
-                "service_config.yaml", 
-                "qdrant.collection", 
-                {}
-            )
-            
             # Configure vector parameters
             vectors_config = models.VectorParams(
                 size=self.qdrant_config.vector_size,
                 distance=models.Distance.COSINE  # Use cosine distance for semantic similarity
             )
             
-            # Configure HNSW for performance
+            # Use default HNSW configuration (optimized for performance)
             hnsw_config = models.HnswConfigDiff(
-                m=service_config.get("hnsw_config", {}).get("m", 16),
-                ef_construct=service_config.get("hnsw_config", {}).get("ef_construct", 100),
-                full_scan_threshold=service_config.get("hnsw_config", {}).get("full_scan_threshold", 10000)
+                m=16,                      # Default connections per node
+                ef_construct=100,          # Default construction accuracy
+                full_scan_threshold=10000  # Switch to full scan at 10k vectors
             )
             
             # Configure optimizers

@@ -57,8 +57,18 @@ class EmbeddingServiceWrapper:
     
     def __init__(self):
         """Initialize the embedding service wrapper."""
-        self.config = get_config_manager()
-        self.embedding_config = self.config.get_embedding_config()
+        # Get API keys from environment
+        import os
+        self._openai_api_key = os.getenv("OPENAI_API_KEY")
+        
+        # Default configuration
+        self.embedding_config = type('EmbeddingConfig', (), {
+            'provider': 'openai',
+            'model': 'text-embedding-3-small',
+            'dimensions': 1536,
+            'batch_size': 100,
+            'api_key': self._openai_api_key
+        })()
         
         # Provider clients
         self._openai_client: Optional[openai.OpenAI] = None
@@ -66,11 +76,7 @@ class EmbeddingServiceWrapper:
         
         # Provider status
         self._primary_provider = self.embedding_config.provider
-        self._fallback_provider = self.config.get_yaml_config(
-            "service_config.yaml", 
-            "embeddings.fallback_provider", 
-            "sentence_transformers"
-        )
+        self._fallback_provider = "sentence_transformers"
         self._current_provider = self._primary_provider
         self._provider_health = {}
         self._last_health_check = 0
@@ -102,14 +108,9 @@ class EmbeddingServiceWrapper:
             (self._current_provider == "sentence_transformers" or 
              self._fallback_provider == "sentence_transformers")):
             
-            sbert_config = self.config.get_yaml_config(
-                "service_config.yaml", 
-                "embeddings.sentence_transformers", 
-                {}
-            )
-            
-            model_name = sbert_config.get("model", "all-MiniLM-L6-v2")
-            device = sbert_config.get("device", "cpu")
+            # Use default SentenceTransformers configuration
+            model_name = "all-MiniLM-L6-v2"  # Default model (384 dimensions)
+            device = "cpu"  # Default device
             
             try:
                 self._sbert_model = SentenceTransformer(model_name, device=device)
