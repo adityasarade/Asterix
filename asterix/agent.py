@@ -29,6 +29,7 @@ from .tools import (
     create_archival_memory_tools,
     create_conversation_search_tool
 )
+from .utils.tokens import count_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -58,18 +59,27 @@ class MemoryBlock:
     
     def update_content(self, new_content: str):
         """
-        Update the block's content.
+        Update the block's content and recalculate token count.
         
         Args:
             new_content: New content for the block
         """
         self.content = new_content
         self.last_updated = datetime.now(timezone.utc)
-        # Token count will be calculated by agent
+        
+        # Calculate tokens for the new content
+        try:
+            token_result = count_tokens(new_content)
+            self.tokens = token_result.tokens
+            logger.debug(f"Block '{self.name}' updated: {self.tokens} tokens")
+        except Exception as e:
+            # Fallback to rough estimate if token counting fails
+            self.tokens = len(new_content) // 4
+            logger.warning(f"Token counting failed for block '{self.name}', using estimate: {e}")
     
     def append_content(self, additional_content: str):
         """
-        Append content to the block.
+        Append content to the block and recalculate token count.
         
         Args:
             additional_content: Content to append
@@ -79,6 +89,16 @@ class MemoryBlock:
         else:
             self.content = additional_content
         self.last_updated = datetime.now(timezone.utc)
+        
+        # Recalculate tokens for updated content
+        try:
+            token_result = count_tokens(self.content)
+            self.tokens = token_result.tokens
+            logger.debug(f"Block '{self.name}' appended: {self.tokens} tokens")
+        except Exception as e:
+            # Fallback to rough estimate if token counting fails
+            self.tokens = len(self.content) // 4
+            logger.warning(f"Token counting failed for block '{self.name}', using estimate: {e}")
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert block to dictionary for serialization."""
@@ -296,7 +316,10 @@ class Agent:
         self.blocks[block_name].update_content(content)
         self.last_updated = datetime.now(timezone.utc)
         
-        # TODO: Check token limits and trigger eviction if needed (Step 4)
+        # Check if block exceeds token limit (Step 4.1)
+        if self._check_block_eviction(block_name):
+            logger.info(f"Block '{block_name}' needs eviction - summarization will be triggered")
+            # TODO: Step 4.1b - Trigger summarization and replacement
         
         logger.debug(f"Updated block '{block_name}'")
     
@@ -320,9 +343,34 @@ class Agent:
         self.blocks[block_name].append_content(content)
         self.last_updated = datetime.now(timezone.utc)
         
-        # TODO: Check token limits and trigger eviction if needed (Step 4)
+        # Check if block exceeds token limit (Step 4.1)
+        if self._check_block_eviction(block_name):
+            logger.info(f"Block '{block_name}' needs eviction - summarization will be triggered")
+            # TODO: Step 4.1b - Trigger summarization and replacement
         
         logger.debug(f"Appended to block '{block_name}'")
+    
+    def _check_block_eviction(self, block_name: str) -> bool:
+        """
+        Check if a memory block exceeds its token limit and needs eviction.
+        
+        Args:
+            block_name: Name of the block to check
+            
+        Returns:
+            True if block needs eviction, False otherwise
+        """
+        block = self.blocks[block_name]
+        exceeds_limit = block.tokens > block.config.size
+        
+        if exceeds_limit:
+            logger.warning(
+                f"Block '{block_name}' exceeds limit: "
+                f"{block.tokens}/{block.config.size} tokens "
+                f"(+{block.tokens - block.config.size} over)"
+            )
+        
+        return exceeds_limit
     
     def get_block_info(self) -> Dict[str, Dict[str, Any]]:
         """
