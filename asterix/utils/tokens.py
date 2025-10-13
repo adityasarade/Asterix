@@ -40,8 +40,10 @@ class TokenCounter:
     """
     
     def __init__(self):
-        self.config = get_config_manager()
+        # Simplified config access - use defaults instead of complex YAML lookups
         self._encoders: Dict[str, any] = {}
+        self._default_method = "tiktoken"  # Default counting method
+        self._approximate_ratio = 4  # 4 chars per token (approximate)
         self._load_encoders()
     
     def _load_encoders(self):
@@ -121,13 +123,8 @@ class TokenCounter:
             if model:
                 encoder = self.get_encoder_for_model(model)
             else:
-                # Use default encoder from config
-                encoder_name = self.config.get_yaml_config(
-                    "memory_config.yaml", 
-                    "tokens.tiktoken_model", 
-                    "cl100k_base"
-                )
-                encoder = self._encoders.get(encoder_name)
+                # Use default encoder (cl100k_base for GPT-4, GPT-3.5, modern OpenAI models)
+                encoder = self._encoders.get("cl100k_base")
             
             if not encoder:
                 logger.warning(f"No encoder found for model {model}, using approximate counting")
@@ -158,12 +155,8 @@ class TokenCounter:
         Returns:
             Token count result
         """
-        # Get ratio from config
-        char_per_token = self.config.get_yaml_config(
-            "memory_config.yaml",
-            "tokens.approximate_ratio",
-            4
-        )
+        # Use default ratio (4 characters per token)
+        char_per_token = self._approximate_ratio
         
         characters = len(text)
         words = len(text.split())
@@ -212,13 +205,9 @@ class TokenCounter:
         if not text:
             return TokenCount(tokens=0, characters=0, words=0, method="empty")
         
-        # Determine method
+        # Determine method - use default if not specified
         if not method:
-            method = self.config.get_yaml_config(
-                "memory_config.yaml",
-                "tokens.counter",
-                "tiktoken"
-            )
+            method = self._default_method
         
         # Count tokens based on method
         if method == "tiktoken":
@@ -385,14 +374,14 @@ class TokenCounter:
         Returns:
             Dictionary with token budget analysis
         """
-        memory_config = self.config.get_memory_config()
+        default_limit = 1500
         
         block_info = {}
         total_tokens = 0
         
         for block_name, content in memory_blocks.items():
             token_count = self.count_tokens(content, model)
-            limit = memory_config.core_block_token_limit
+            limit = default_limit
             
             block_info[block_name] = {
                 "current_tokens": token_count.tokens,
