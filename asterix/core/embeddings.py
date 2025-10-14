@@ -120,30 +120,24 @@ class EmbeddingServiceWrapper:
     
     async def _check_provider_health(self) -> Dict[str, bool]:
         """
-        Check health of embedding providers.
+        Check health of embedding providers (simplified - no actual health checks).
         
         Returns:
             Dictionary mapping provider names to health status
         """
-        current_time = time.time()
-        if (current_time - self._last_health_check) < self._health_check_interval:
-            return self._provider_health
-        
+        # Simplified: just return True for configured providers
+        # Actual health will be determined when we try to use them
         health_status = {}
         
-        # Check OpenAI embeddings health
-        if self.embedding_config.provider == "openai" or self._fallback_provider == "openai":
-            openai_health = await health_monitor.check_openai_health("embeddings")
-            health_status["openai"] = openai_health.status == "healthy"
+        # Check if providers are configured (not if they're actually healthy)
+        if self._openai_api_key:
+            health_status["openai"] = True
         
-        # Check SentenceTransformers health
-        if (self.embedding_config.provider == "sentence_transformers" or 
-            self._fallback_provider == "sentence_transformers"):
-            sbert_health = await health_monitor.check_sentence_transformers_health()
-            health_status["sentence_transformers"] = sbert_health.status == "healthy"
+        # SentenceTransformers is always "healthy" (local, no API)
+        health_status["sentence_transformers"] = True
         
         self._provider_health = health_status
-        self._last_health_check = current_time
+        self._last_health_check = time.time()
         
         return health_status
     
@@ -160,13 +154,12 @@ class EmbeddingServiceWrapper:
         if health_status.get(self._primary_provider, False):
             return self._primary_provider
         
-        # Fall back to fallback provider
+        # Fall back to fallback provider if primary fails
         if health_status.get(self._fallback_provider, False):
-            logger.warning(f"Primary provider {self._primary_provider} unhealthy, using fallback {self._fallback_provider}")
+            logger.debug(f"Using fallback provider: {self._fallback_provider}")
             return self._fallback_provider
-        
-        # If both unhealthy, still try primary (might work)
-        logger.error("Both embedding providers appear unhealthy, trying primary anyway")
+
+        # Default to primary
         return self._primary_provider
     
     def _get_cache_key(self, texts: List[str], model: str) -> str:

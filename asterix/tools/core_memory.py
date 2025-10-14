@@ -114,20 +114,23 @@ class CoreMemoryAppendTool(Tool):
             # Get current block state
             memory_block = self.agent.blocks[block]
             old_content = memory_block.content
+            old_tokens = memory_block.tokens
             
             # Append content using the agent's method
+            # (agent.append_to_memory handles eviction automatically)
             self.agent.append_to_memory(block, content.strip())
             
-            # Get updated state
+            # Get updated state after potential eviction
             new_content = memory_block.content
+            new_tokens = memory_block.tokens
             
-            # TODO: In Step 4, check if block exceeds token limit and trigger eviction
-            # For now, just log a warning if it might be too large
-            if len(new_content) > memory_block.config.size * 4:  # Rough estimate (4 chars/token)
-                logger.warning(f"Block '{block}' may exceed token limit after append")
+            # Detect if eviction was triggered
+            eviction_triggered = new_tokens < (old_tokens + len(content.strip()) // 4)
             
             # Success response
             result_message = f"Successfully appended content to memory block '{block}'"
+            if eviction_triggered:
+                result_message += f" (block was summarized: {old_tokens}→{new_tokens} tokens)"
             
             return ToolResult(
                 status=ToolStatus.SUCCESS,
@@ -136,8 +139,9 @@ class CoreMemoryAppendTool(Tool):
                     "block": block,
                     "operation": "append",
                     "content_added": content.strip(),
-                    "old_length": len(old_content),
-                    "new_length": len(new_content),
+                    "old_tokens": old_tokens,
+                    "new_tokens": new_tokens,
+                    "eviction_triggered": eviction_triggered,
                     "block_priority": memory_block.config.priority
                 }
             )
@@ -272,20 +276,31 @@ class CoreMemoryReplaceTool(Tool):
                 # Multiple occurrences - warn but proceed with replace all
                 logger.warning(f"Found {occurrence_count} occurrences of old_content in block '{block}', replacing all")
             
+            # Get token count before replacement
+            old_tokens = memory_block.tokens
+            
             # Perform replacement
             updated_content = current_content.replace(old_content.strip(), new_content.strip())
             
             # Update the block using agent's method
+            # (agent.update_memory handles eviction automatically)
             self.agent.update_memory(block, updated_content)
             
-            # TODO: In Step 4, check if block exceeds token limit and trigger eviction
-            if len(updated_content) > memory_block.config.size * 4:  # Rough estimate
-                logger.warning(f"Block '{block}' may exceed token limit after replace")
+            # Get updated state after potential eviction
+            new_tokens = memory_block.tokens
+            final_content = memory_block.content
+            
+            # Detect if eviction was triggered
+            from ..utils.tokens import count_tokens
+            expected_tokens = count_tokens(updated_content).tokens
+            eviction_triggered = new_tokens < expected_tokens
             
             # Success response
             result_message = f"Successfully replaced content in memory block '{block}'"
             if occurrence_count > 1:
                 result_message += f" ({occurrence_count} occurrences)"
+            if eviction_triggered:
+                result_message += f" (block was summarized: {expected_tokens}→{new_tokens} tokens)"
             
             return ToolResult(
                 status=ToolStatus.SUCCESS,
@@ -296,8 +311,9 @@ class CoreMemoryReplaceTool(Tool):
                     "old_content": old_content.strip(),
                     "new_content": new_content.strip(),
                     "occurrences_replaced": occurrence_count,
-                    "old_length": len(current_content),
-                    "new_length": len(updated_content),
+                    "old_tokens": old_tokens,
+                    "new_tokens": new_tokens,
+                    "eviction_triggered": eviction_triggered,
                     "block_priority": memory_block.config.priority
                 }
             )
