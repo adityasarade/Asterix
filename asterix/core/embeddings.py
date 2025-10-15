@@ -1,5 +1,5 @@
 """
-MemGPT Embedding Service Wrapper
+Asterix Embedding Service Wrapper
 
 Provides a unified interface for embedding services with:
 - Provider switching between OpenAI and SentenceTransformers

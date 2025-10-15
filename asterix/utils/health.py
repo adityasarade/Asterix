@@ -1,10 +1,10 @@
 """
-MemGPT Service Health Monitoring
+Asterix Service Health Monitoring
 
 Monitors the health and availability of all external services:
-- Letta server
 - Qdrant Cloud
 - Embedding services (OpenAI/SentenceTransformers)
+- LLM providers (Groq/OpenAI)
 
 Provides immediate failure reporting with specific reasons.
 """

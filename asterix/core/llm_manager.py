@@ -1,5 +1,5 @@
 """
-MemGPT LLM Provider Manager
+Asterix LLM Provider Manager
 
 Provides intelligent routing and management for LLM providers with:
 - Health-aware routing between Groq and OpenAI

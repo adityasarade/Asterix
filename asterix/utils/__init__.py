@@ -1,5 +1,5 @@
 """
-MemGPT Utilities Package
+Asterix Utilities Package
 
 Core utilities for configuration, health monitoring, and token management.
 """
