@@ -971,6 +971,377 @@ class ToolRegistry:
             "schema": tool.schema
         }
 
+    # ========================================================================
+    # Documentation Generation
+    # ========================================================================
+
+    def generate_tool_docs(self, tool_name: str, format: str = "markdown") -> Optional[str]:
+        """
+        Generate documentation for a specific tool.
+        
+        Creates human-readable documentation including description,
+        parameters, constraints, examples, and usage information.
+        
+        Args:
+            tool_name: Name of the tool to document
+            format: Output format ('markdown' or 'text')
+            
+        Returns:
+            Formatted documentation string or None if tool not found
+            
+        Example:
+            >>> docs = registry.generate_tool_docs("core_memory_append")
+            >>> print(docs)
+            # core_memory_append
+            
+            **Category:** memory
+            
+            **Description:** Add content to a memory block...
+            ...
+        """
+        tool = self.get(tool_name)
+        if not tool:
+            logger.warning(f"Cannot generate docs: tool '{tool_name}' not found")
+            return None
+        
+        if format == "markdown":
+            return self._generate_markdown_docs(tool)
+        else:
+            return self._generate_text_docs(tool)
+
+    def _generate_markdown_docs(self, tool: Tool) -> str:
+        """Generate markdown documentation for a tool."""
+        lines = []
+        
+        # Header
+        lines.append(f"# {tool.name}\n")
+        
+        # Category
+        lines.append(f"**Category:** `{tool.category.value}`\n")
+        
+        # Description
+        lines.append(f"**Description:** {tool.description}\n")
+        
+        # Parameters
+        if tool.schema and 'function' in tool.schema:
+            params = tool.schema['function'].get('parameters', {})
+            properties = params.get('properties', {})
+            required = params.get('required', [])
+            
+            if properties:
+                lines.append("## Parameters\n")
+                
+                for param_name, param_info in properties.items():
+                    # Parameter name with required indicator
+                    req_marker = " *(required)*" if param_name in required else " *(optional)*"
+                    lines.append(f"### `{param_name}`{req_marker}\n")
+                    
+                    # Type
+                    param_type = param_info.get('type', 'any')
+                    lines.append(f"- **Type:** `{param_type}`")
+                    
+                    # Description
+                    if 'description' in param_info:
+                        lines.append(f"- **Description:** {param_info['description']}")
+                    
+                    # Constraints
+                    if param_name in tool.constraints:
+                        constraint = tool.constraints[param_name]
+                        lines.append("- **Constraints:**")
+                        
+                        if constraint.min_value is not None:
+                            lines.append(f"  - Minimum value: `{constraint.min_value}`")
+                        if constraint.max_value is not None:
+                            lines.append(f"  - Maximum value: `{constraint.max_value}`")
+                        if constraint.min_length is not None:
+                            lines.append(f"  - Minimum length: `{constraint.min_length}`")
+                        if constraint.max_length is not None:
+                            lines.append(f"  - Maximum length: `{constraint.max_length}`")
+                        if constraint.pattern is not None:
+                            lines.append(f"  - Pattern: `{constraint.pattern}`")
+                        if constraint.allowed_values is not None:
+                            lines.append(f"  - Allowed values: `{constraint.allowed_values}`")
+                    
+                    lines.append("")  # Blank line
+        
+        # Examples
+        if tool.examples:
+            lines.append("## Examples\n")
+            for idx, example in enumerate(tool.examples, 1):
+                lines.append(f"**Example {idx}:**")
+                lines.append(f"```python\n{example}\n```\n")
+        
+        # Retry configuration
+        if tool.retry_on_error:
+            lines.append("## Retry Configuration\n")
+            lines.append(f"- **Retry on error:** Yes")
+            lines.append(f"- **Max retries:** {tool.max_retries}\n")
+        
+        return "\n".join(lines)
+
+    def _generate_text_docs(self, tool: Tool) -> str:
+        """Generate plain text documentation for a tool."""
+        lines = []
+        
+        # Header
+        lines.append("=" * 60)
+        lines.append(f"TOOL: {tool.name}")
+        lines.append("=" * 60)
+        lines.append("")
+        
+        # Basic info
+        lines.append(f"Category: {tool.category.value}")
+        lines.append(f"Description: {tool.description}")
+        lines.append("")
+        
+        # Parameters
+        if tool.schema and 'function' in tool.schema:
+            params = tool.schema['function'].get('parameters', {})
+            properties = params.get('properties', {})
+            required = params.get('required', [])
+            
+            if properties:
+                lines.append("PARAMETERS:")
+                lines.append("-" * 60)
+                
+                for param_name, param_info in properties.items():
+                    req = "[REQUIRED]" if param_name in required else "[OPTIONAL]"
+                    param_type = param_info.get('type', 'any')
+                    lines.append(f"  {param_name} ({param_type}) {req}")
+                    
+                    if 'description' in param_info:
+                        lines.append(f"    {param_info['description']}")
+                    
+                    if param_name in tool.constraints:
+                        constraint = tool.constraints[param_name]
+                        constraints_list = []
+                        
+                        if constraint.min_value is not None:
+                            constraints_list.append(f"min: {constraint.min_value}")
+                        if constraint.max_value is not None:
+                            constraints_list.append(f"max: {constraint.max_value}")
+                        if constraint.min_length is not None:
+                            constraints_list.append(f"min_length: {constraint.min_length}")
+                        if constraint.max_length is not None:
+                            constraints_list.append(f"max_length: {constraint.max_length}")
+                        
+                        if constraints_list:
+                            lines.append(f"    Constraints: {', '.join(constraints_list)}")
+                    
+                    lines.append("")
+        
+        # Examples
+        if tool.examples:
+            lines.append("EXAMPLES:")
+            lines.append("-" * 60)
+            for idx, example in enumerate(tool.examples, 1):
+                lines.append(f"Example {idx}:")
+                lines.append(f"  {example}")
+                lines.append("")
+        
+        return "\n".join(lines)
+
+    def generate_registry_docs(self, 
+                            format: str = "markdown",
+                            group_by_category: bool = True,
+                            include_examples: bool = True) -> str:
+        """
+        Generate complete documentation for all tools in the registry.
+        
+        Creates a comprehensive documentation file covering all registered
+        tools, organized by category.
+        
+        Args:
+            format: Output format ('markdown' or 'text')
+            group_by_category: Whether to group tools by category
+            include_examples: Whether to include usage examples
+            
+        Returns:
+            Complete documentation string
+            
+        Example:
+            >>> docs = registry.generate_registry_docs()
+            >>> with open("TOOL_REFERENCE.md", "w") as f:
+            ...     f.write(docs)
+        """
+        if format == "markdown":
+            return self._generate_markdown_registry_docs(group_by_category, include_examples)
+        else:
+            return self._generate_text_registry_docs(group_by_category, include_examples)
+
+    def _generate_markdown_registry_docs(self, 
+                                        group_by_category: bool,
+                                        include_examples: bool) -> str:
+        """Generate markdown documentation for entire registry."""
+        lines = []
+        
+        # Header
+        lines.append("# Tool Registry Documentation\n")
+        lines.append(f"**Total Tools:** {len(self._tools)}\n")
+        
+        # Category summary
+        lines.append("## Categories\n")
+        categories = self.list_categories()
+        for category, count in sorted(categories.items()):
+            lines.append(f"- **{category}:** {count} tool{'s' if count != 1 else ''}")
+        lines.append("\n---\n")
+        
+        # Tools documentation
+        if group_by_category:
+            # Group by category
+            for category in ToolCategory:
+                tools_in_category = self.get_by_category(category)
+                
+                if tools_in_category:
+                    lines.append(f"## {category.value.replace('_', ' ').title()} Tools\n")
+                    
+                    for tool in sorted(tools_in_category, key=lambda t: t.name):
+                        # Add tool documentation
+                        tool_docs = self._generate_markdown_docs(tool)
+                        
+                        # Remove examples if not requested
+                        if not include_examples and "## Examples" in tool_docs:
+                            tool_docs = tool_docs.split("## Examples")[0]
+                        
+                        lines.append(tool_docs)
+                        lines.append("\n---\n")
+        else:
+            # Alphabetical order
+            lines.append("## All Tools\n")
+            for tool_name in sorted(self._tools.keys()):
+                tool = self._tools[tool_name]
+                tool_docs = self._generate_markdown_docs(tool)
+                
+                if not include_examples and "## Examples" in tool_docs:
+                    tool_docs = tool_docs.split("## Examples")[0]
+                
+                lines.append(tool_docs)
+                lines.append("\n---\n")
+        
+        return "\n".join(lines)
+
+    def _generate_text_registry_docs(self, 
+                                    group_by_category: bool,
+                                    include_examples: bool) -> str:
+        """Generate text documentation for entire registry."""
+        lines = []
+        
+        # Header
+        lines.append("=" * 60)
+        lines.append("TOOL REGISTRY DOCUMENTATION")
+        lines.append("=" * 60)
+        lines.append(f"Total Tools: {len(self._tools)}")
+        lines.append("")
+        
+        # Category summary
+        lines.append("CATEGORIES:")
+        categories = self.list_categories()
+        for category, count in sorted(categories.items()):
+            lines.append(f"  - {category}: {count} tool(s)")
+        lines.append("")
+        lines.append("=" * 60)
+        lines.append("")
+        
+        # Tools documentation
+        if group_by_category:
+            for category in ToolCategory:
+                tools_in_category = self.get_by_category(category)
+                
+                if tools_in_category:
+                    lines.append(f"{category.value.upper()} TOOLS")
+                    lines.append("-" * 60)
+                    lines.append("")
+                    
+                    for tool in sorted(tools_in_category, key=lambda t: t.name):
+                        tool_docs = self._generate_text_docs(tool)
+                        if not include_examples and "EXAMPLES:" in tool_docs:
+                            tool_docs = tool_docs.split("EXAMPLES:")[0]
+                        lines.append(tool_docs)
+                        lines.append("")
+        else:
+            for tool_name in sorted(self._tools.keys()):
+                tool = self._tools[tool_name]
+                tool_docs = self._generate_text_docs(tool)
+                if not include_examples and "EXAMPLES:" in tool_docs:
+                    tool_docs = tool_docs.split("EXAMPLES:")[0]
+                lines.append(tool_docs)
+                lines.append("")
+        
+        return "\n".join(lines)
+
+    def export_tool_catalog(self, format: str = "json") -> str:
+        """
+        Export tool catalog in structured format (JSON or YAML).
+        
+        Useful for tool discovery, IDE integration, or external documentation
+        generators.
+        
+        Args:
+            format: Export format ('json' or 'yaml')
+            
+        Returns:
+            Serialized tool catalog
+            
+        Example:
+            >>> catalog = registry.export_tool_catalog("json")
+            >>> with open("tool_catalog.json", "w") as f:
+            ...     f.write(catalog)
+        """
+        catalog = {
+            "tool_count": len(self._tools),
+            "categories": self.list_categories(),
+            "tools": self.list_tools(include_schemas=True)
+        }
+        
+        if format == "json":
+            import json
+            return json.dumps(catalog, indent=2)
+        elif format == "yaml":
+            import yaml
+            return yaml.dump(catalog, default_flow_style=False, sort_keys=False)
+        else:
+            raise ValueError(f"Unsupported format: {format}. Use 'json' or 'yaml'")
+
+    def generate_quick_reference(self) -> str:
+        """
+        Generate a quick reference guide for all tools.
+        
+        Creates a compact one-page reference showing tool names,
+        categories, and brief descriptions.
+        
+        Returns:
+            Quick reference markdown string
+            
+        Example:
+            >>> ref = registry.generate_quick_reference()
+            >>> print(ref)
+        """
+        lines = []
+        
+        lines.append("# Tool Quick Reference\n")
+        lines.append(f"**Total Tools:** {len(self._tools)}\n")
+        
+        # Group by category
+        for category in ToolCategory:
+            tools_in_category = self.get_by_category(category)
+            
+            if tools_in_category:
+                lines.append(f"## {category.value.replace('_', ' ').title()}\n")
+                
+                for tool in sorted(tools_in_category, key=lambda t: t.name):
+                    # Get parameter count
+                    param_count = 0
+                    if tool.schema and 'function' in tool.schema:
+                        params = tool.schema['function'].get('parameters', {})
+                        param_count = len(params.get('properties', {}))
+                    
+                    # Brief one-liner
+                    lines.append(f"- **`{tool.name}`** ({param_count} params) - {tool.description[:80]}{'...' if len(tool.description) > 80 else ''}")
+                
+                lines.append("")
+        
+        return "\n".join(lines)
+    
 # ============================================================================
 # Tool Decorator (for easy registration)
 # ============================================================================
