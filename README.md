@@ -108,12 +108,17 @@ ASTERIX_LOG_LEVEL=INFO
 
 ```yaml
 # agent_config.yaml
-agent:
-  model: "groq/llama-3.3-70b-versatile"
+agent_id: "my_agent"
+max_heartbeat_steps: 10
+
+# LLM Configuration
+llm:
+  provider: "groq"
+  model: "llama-3.3-70b-versatile"
   temperature: 0.1
   max_tokens: 1000
-  max_heartbeat_steps: 10
 
+# Memory Blocks
 blocks:
   task:
     size: 1500
@@ -125,11 +130,23 @@ blocks:
     priority: 2
     description: "Important notes and reminders"
 
+# Storage
 storage:
   qdrant_url: "${QDRANT_URL}"
   qdrant_api_key: "${QDRANT_API_KEY}"
   state_backend: "json"
   state_dir: "./agent_states"
+
+# Memory Management
+memory:
+  eviction_strategy: "summarize_and_archive"
+  context_window_threshold: 0.85
+
+# Embeddings
+embedding:
+  provider: "openai"
+  model: "text-embedding-3-small"
+  dimensions: 1536
 ```
 
 Load from YAML:

@@ -1,0 +1,161 @@
+# =============================================================================
+# Asterix Agent Configuration Template
+# =============================================================================
+# This file shows ALL available configuration options for Asterix agents.
+# Copy this file and customize it for your use case.
+#
+# Priority order: Python overrides > Environment variables > YAML > Defaults
+# Environment variables can be referenced using ${VAR_NAME} syntax
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Agent Identity
+# -----------------------------------------------------------------------------
+agent_id: "my_agent"                    # Unique identifier for this agent
+
+# Maximum steps in a single heartbeat loop (prevents infinite tool calls)
+max_heartbeat_steps: 10                 # Default: 10
+
+# -----------------------------------------------------------------------------
+# LLM Configuration
+# -----------------------------------------------------------------------------
+# The language model that powers the agent's responses
+llm:
+  provider: "groq"                      # Options: "groq", "openai"
+  model: "llama-3.3-70b-versatile"      # Model name without provider prefix
+  temperature: 0.1                      # Sampling temperature (0.0-2.0)
+  max_tokens: 1000                      # Maximum tokens per completion
+  timeout: 30                           # Request timeout in seconds
+
+# Legacy format also supported (for backward compatibility):
+# model: "groq/llama-3.3-70b-versatile"
+# temperature: 0.1
+# max_tokens: 1000
+
+# -----------------------------------------------------------------------------
+# Memory Blocks Configuration
+# -----------------------------------------------------------------------------
+# Memory blocks are editable sections of agent memory.
+# Each block has a token limit - when exceeded, content is summarized.
+blocks:
+  # High-priority block - rarely evicted
+  persona:
+    size: 1000                          # Max tokens before eviction
+    priority: 10                        # Higher = less likely to be evicted
+    description: "Agent personality and behavior guidelines"
+    initial_value: "I am a helpful AI assistant with persistent memory."
+  
+  # User information block
+  user:
+    size: 1000
+    priority: 5
+    description: "Information about the user"
+    initial_value: "User information will be stored here."
+  
+  # Task tracking block - can be evicted if needed
+  task:
+    size: 1500
+    priority: 2
+    description: "Current task and context"
+    initial_value: ""
+  
+  # Custom blocks - add as many as you need
+  notes:
+    size: 800
+    priority: 3
+    description: "Important notes and reminders"
+    initial_value: ""
+
+# Block Priority Guidelines:
+# - 10: Critical (persona, core identity) - never evicted
+# - 5-9: Important (user prefs, key context) - rarely evicted
+# - 2-4: Normal (task context, notes) - evicted when needed
+# - 1: Low (temporary data) - evicted first
+
+# -----------------------------------------------------------------------------
+# Storage Configuration
+# -----------------------------------------------------------------------------
+# Settings for Qdrant vector storage and agent state persistence
+storage:
+  # Qdrant Cloud settings (use environment variables for sensitive data)
+  qdrant_url: "${QDRANT_URL}"           # Qdrant Cloud URL
+  qdrant_api_key: "${QDRANT_API_KEY}"   # API key for authentication
+  qdrant_collection_name: "asterix_memory"  # Collection name for vectors
+  vector_size: 1536                     # Embedding dimensions (1536 for OpenAI, 384 for sentence-transformers)
+  qdrant_timeout: 30                    # Timeout for Qdrant operations (seconds)
+  auto_create_collection: true          # Auto-create collection if missing
+  
+  # Agent state persistence settings
+  state_backend: "json"                 # Options: "json", "sqlite"
+  state_dir: "./agent_states"           # Directory for state files (json backend)
+  state_db: "agents.db"                 # Database filename (sqlite backend)
+
+# State Backend Options:
+# - "json": Simple file-based storage, one file per agent
+# - "sqlite": Database storage, better for many agents
+
+# -----------------------------------------------------------------------------
+# Memory Management Configuration
+# -----------------------------------------------------------------------------
+# Controls how agent memory is managed and archived
+memory:
+  eviction_strategy: "summarize_and_archive"  # Strategy when blocks exceed token limit
+  summary_token_limit: 220              # Target size for summarized blocks
+  context_window_threshold: 0.85        # Trigger extraction at 85% context capacity
+  extraction_enabled: true              # Enable automatic fact extraction
+  retrieval_k: 6                        # Number of memories to retrieve from Qdrant
+  score_threshold: 0.7                  # Minimum similarity score for retrieval
+
+# Eviction Strategy Options:
+# - "summarize_and_archive": LLM summarizes block, stores full version in Qdrant
+# - "truncate": Simply truncate to fit (not recommended, loses information)
+
+# Memory Management Flow:
+# 1. Block exceeds token limit → Eviction triggered
+# 2. LLM summarizes block content (e.g., 2000 → 220 tokens)
+# 3. Full content archived to Qdrant for retrieval
+# 4. Block replaced with summary
+
+# Context Extraction Flow:
+# 1. Context reaches 85% capacity → Extraction triggered
+# 2. LLM extracts important facts from old messages
+# 3. Facts stored in Qdrant via archival_memory_insert
+# 4. Conversation trimmed to recent 10 messages
+
+# -----------------------------------------------------------------------------
+# Embedding Configuration
+# -----------------------------------------------------------------------------
+# Settings for generating vector embeddings
+embedding:
+  provider: "openai"                    # Options: "openai", "sentence-transformers"
+  model: "text-embedding-3-small"       # Embedding model name
+  dimensions: 1536                      # Embedding dimensions (must match vector_size)
+  batch_size: 100                       # Batch size for embedding generation
+  api_key: "${OPENAI_API_KEY}"          # API key (optional, uses env var if not set)
+
+# Embedding Provider Options:
+# - "openai": High-quality embeddings, requires API key (1536 dimensions)
+# - "sentence-transformers": Local embeddings, no API key needed (384 dimensions)
+
+# IMPORTANT: embedding.dimensions must match storage.vector_size
+
+# -----------------------------------------------------------------------------
+# Environment Variables Reference
+# -----------------------------------------------------------------------------
+# These environment variables can override YAML settings:
+#
+# LLM:
+#   AGENT_MODEL, AGENT_TEMPERATURE, AGENT_MAX_TOKENS, LLM_TIMEOUT
+#
+# Storage:
+#   QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION_NAME
+#
+# Embedding:
+#   OPENAI_API_KEY, EMBED_PROVIDER
+#
+# State:
+#   ASTERIX_STATE_DIR, ASTERIX_LOG_LEVEL
+#
+# Agent:
+#   AGENT_ID, AGENT_MAX_HEARTBEAT_STEPS
+# =============================================================================

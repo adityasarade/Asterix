@@ -495,37 +495,25 @@ class ConfigurationManager:
         
         # Build configuration with priority: overrides > env vars > yaml > defaults
         
-        # 1. Start with YAML or defaults
+        # 1. Load agent_id and max_heartbeat_steps (top-level settings)
         agent_id = yaml_config.get("agent_id", "agent")
-        model = yaml_config.get("model", "groq/llama-3.3-70b-versatile")
-        temperature = yaml_config.get("temperature", 0.1)
-        max_tokens = yaml_config.get("max_tokens", 1000)
         max_heartbeat_steps = yaml_config.get("max_heartbeat_steps", 10)
         
-        # 2. Apply environment variable overrides
+        # Apply environment variable overrides
         agent_id = get_env("AGENT_ID", agent_id)
-        model = get_env("AGENT_MODEL", model)
-        temperature = float(get_env("AGENT_TEMPERATURE", temperature))
-        max_tokens = int(get_env("AGENT_MAX_TOKENS", max_tokens))
         max_heartbeat_steps = int(get_env("AGENT_MAX_HEARTBEAT_STEPS", max_heartbeat_steps))
         
-        # 3. Apply Python overrides
+        # Apply Python overrides
         agent_id = overrides.pop("agent_id", agent_id)
-        model = overrides.pop("model", model)
-        temperature = overrides.pop("temperature", temperature)
-        max_tokens = overrides.pop("max_tokens", max_tokens)
         max_heartbeat_steps = overrides.pop("max_heartbeat_steps", max_heartbeat_steps)
         
-        # Load blocks configuration
+        # 2. Load LLM configuration (using new method)
+        model, temperature, max_tokens, timeout = self._load_llm_config(yaml_config, overrides)
+        
+        # 3. Load all other configuration sections
         blocks = self._load_blocks_config(yaml_config, overrides)
-        
-        # Load storage configuration
         storage = self._load_storage_config(yaml_config, overrides)
-        
-        # Load memory configuration
         memory = self._load_memory_config(yaml_config, overrides)
-        
-        # Load embedding configuration
         embedding = self._load_embedding_config(yaml_config, overrides)
         
         # Create AgentConfig
@@ -567,6 +555,71 @@ class ConfigurationManager:
             )
         
         return blocks
+    
+    def _load_llm_config(self,
+                        yaml_config: Dict[str, Any],
+                        overrides: Dict[str, Any]) -> tuple[str, float, int, int]:
+        """
+        Load LLM configuration from YAML and overrides.
+        
+        Supports two formats:
+        1. New format (preferred):
+           llm:
+             provider: "groq"
+             model: "llama-3.3-70b-versatile"
+             temperature: 0.1
+             max_tokens: 1000
+             timeout: 30
+        
+        2. Legacy format (backward compatible):
+           model: "groq/llama-3.3-70b-versatile"
+           temperature: 0.1
+           max_tokens: 1000
+        
+        Args:
+            yaml_config: YAML configuration dictionary
+            overrides: Python override dictionary
+            
+        Returns:
+            Tuple of (model, temperature, max_tokens, timeout)
+        """
+        # Check for new LLM section format
+        llm_config = yaml_config.get("llm", {})
+        
+        if llm_config:
+            # New format: llm section exists
+            provider = llm_config.get("provider", "groq")
+            model_name = llm_config.get("model", "llama-3.3-70b-versatile")
+            
+            # Combine provider/model if provider specified
+            if provider and model_name:
+                model = f"{provider}/{model_name}"
+            else:
+                model = model_name
+            
+            temperature = float(llm_config.get("temperature", 0.1))
+            max_tokens = int(llm_config.get("max_tokens", 1000))
+            timeout = int(llm_config.get("timeout", 30))
+        else:
+            # Legacy format: settings at top level
+            model = yaml_config.get("model", "groq/llama-3.3-70b-versatile")
+            temperature = float(yaml_config.get("temperature", 0.1))
+            max_tokens = int(yaml_config.get("max_tokens", 1000))
+            timeout = 30  # Default for legacy format
+        
+        # Apply environment variable overrides
+        model = get_env("AGENT_MODEL", model)
+        temperature = float(get_env("AGENT_TEMPERATURE", temperature))
+        max_tokens = int(get_env("AGENT_MAX_TOKENS", max_tokens))
+        timeout = int(get_env("LLM_TIMEOUT", timeout))
+        
+        # Apply Python overrides
+        model = overrides.pop("model", model)
+        temperature = overrides.pop("temperature", temperature)
+        max_tokens = overrides.pop("max_tokens", max_tokens)
+        timeout = overrides.pop("timeout", timeout) if "timeout" in overrides else timeout
+        
+        return model, temperature, max_tokens, timeout
     
     def _load_storage_config(self,
                             yaml_config: Dict[str, Any],
