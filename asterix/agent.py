@@ -919,15 +919,19 @@ class Agent:
         Extract important facts from conversation that's about to be trimmed.
         
         Called when context window reaches 85% threshold.
-        """
-        print("\n" + "=" * 70)
-        print("🔍 CONTEXT EXTRACTION DEBUG - Starting")
-        print("=" * 70)
         
+        Process:
+        1. Identify messages that will be trimmed (all except recent 10)
+        2. Extract facts from those OLD messages (they're about to disappear)
+        3. Store extracted facts in Qdrant via archival_memory_insert
+        4. Trim conversation to keep only recent 10 turns
+        
+        This preserves information before it's deleted from active context.
+        """
         logger.info("Starting context extraction and archival process")
         
         try:
-            # Ensure LLM manager is initialized before using it
+            # Ensure LLM manager is initialized
             self._ensure_llm_manager()
             
             # 1. Identify which messages will be trimmed
@@ -935,45 +939,32 @@ class Agent:
             total_messages = len(self.conversation_history)
             
             if total_messages <= keep_recent:
-                print(f"ℹ️  Only {total_messages} messages, no extraction needed")
                 logger.info(f"Only {total_messages} messages, no extraction needed")
                 return
             
-            # Messages that will be DELETED (extract facts from these before they're gone)
+            # Messages that will be DELETED (extract facts from these)
             messages_to_archive = self.conversation_history[:-keep_recent]
-            
-            print(f"\n📋 Extracting from {len(messages_to_archive)} old messages")
-            print(f"   (Keeping recent {keep_recent} in active context)")
             
             logger.info(
                 f"Extracting facts from {len(messages_to_archive)} old messages "
                 f"(keeping recent {keep_recent} in active context)"
             )
             
-            # 2. Also include memory blocks in extraction
+            # 2. Include memory blocks in extraction
             memory_blocks_content = {
                 name: block.content 
                 for name, block in self.blocks.items() 
-                if block.content.strip()  # Only non-empty blocks
+                if block.content.strip()
             }
             
-            print(f"📦 Including {len(memory_blocks_content)} non-empty memory blocks")
-            
-            # 3. Build extraction prompt from OLD messages (about to be deleted)
+            # 3. Build extraction prompt
             extraction_prompt = self._build_extraction_prompt(
                 messages_to_archive,
                 memory_blocks_content
             )
             
-            print(f"\n📤 EXTRACTION PROMPT (first 400 chars):")
-            print("-" * 70)
-            print(extraction_prompt[:400])
-            print("..." if len(extraction_prompt) > 400 else "")
-            print("-" * 70)
-            
             # 4. Call LLM to extract facts
-            print("\n🤖 Calling LLM for fact extraction...")
-            logger.info("Requesting fact extraction from LLM")
+            logger.debug("Requesting fact extraction from LLM")
             
             from .core.llm_manager import LLMMessage
             import asyncio
@@ -987,64 +978,36 @@ class Agent:
                 )
             )
             
-            print(f"\n📥 RAW LLM RESPONSE ({len(response.content)} chars):")
-            print("-" * 70)
-            print(response.content)
-            print("-" * 70)
-            
             # 5. Parse extracted facts
             try:
                 facts_text = response.content.strip()
                 
                 # Handle markdown code blocks if present
                 if facts_text.startswith("```json"):
-                    print("🔧 Stripping JSON markdown block...")
                     facts_text = facts_text.split("```json")[1].split("```")[0].strip()
                 elif facts_text.startswith("```"):
-                    print("🔧 Stripping generic markdown block...")
                     facts_text = facts_text.split("```")[1].split("```")[0].strip()
-                
-                print(f"\n🔍 Cleaned text for JSON parsing:")
-                print(facts_text[:300])
-                print("..." if len(facts_text) > 300 else "")
                 
                 facts = json.loads(facts_text)
                 
                 if not isinstance(facts, list):
-                    print(f"\n❌ ERROR: Expected list, got {type(facts)}")
-                    print(f"   Value: {facts}")
                     logger.error(f"Expected list of facts, got: {type(facts)}")
                     facts = []
-                
-                print(f"\n✅ Parsed {len(facts)} facts from LLM")
-                
-                if facts:
-                    print("\n📄 Sample facts (first 3):")
-                    for i, fact in enumerate(facts[:3], 1):
-                        print(f"   {i}. Type: {fact.get('type', 'N/A')}")
-                        print(f"      Content: {fact.get('content', 'N/A')[:60]}...")
-                        print(f"      Importance: {fact.get('importance', 0.5)}")
-                else:
-                    print("\n⚠️  WARNING: LLM returned empty facts array []")
                 
                 logger.info(f"LLM extracted {len(facts)} facts from old context")
                 
             except json.JSONDecodeError as e:
-                print(f"\n❌ JSON PARSE ERROR: {e}")
-                print(f"   Problematic text: {facts_text[:200]}")
                 logger.error(f"Failed to parse extracted facts as JSON: {e}")
                 logger.debug(f"LLM response preview: {response.content[:200]}")
                 facts = []
             
             # 6. Store each fact in Qdrant via archival_memory_insert
-            print(f"\n💾 Storing {len(facts)} facts in Qdrant...")
             stored_count = 0
             failed_count = 0
             
             for i, fact in enumerate(facts, 1):
                 if not isinstance(fact, dict):
-                    print(f"   ⏭️  Skipping invalid fact #{i}: {type(fact)}")
-                    logger.warning(f"Skipping invalid fact #{i}: {fact}")
+                    logger.warning(f"Skipping invalid fact #{i}: not a dict")
                     failed_count += 1
                     continue
                 
@@ -1053,12 +1016,11 @@ class Agent:
                 importance = fact.get("importance", 0.5)
                 
                 if not content or not content.strip():
-                    print(f"   ⏭️  Skipping empty fact #{i}")
-                    logger.warning(f"Skipping empty fact #{i}")
+                    logger.debug(f"Skipping empty fact #{i}")
                     failed_count += 1
                     continue
                 
-                # Validate importance is in range
+                # Validate importance is in range [0.0, 1.0]
                 if not isinstance(importance, (int, float)):
                     importance = 0.5
                 importance = max(0.0, min(1.0, float(importance)))
@@ -1068,14 +1030,11 @@ class Agent:
                     insert_tool = self.get_tool("archival_memory_insert")
                     
                     if not insert_tool:
-                        print(f"   ❌ archival_memory_insert tool not available!")
                         logger.error("archival_memory_insert tool not available")
                         break
                     
-                    # Generate a concise summary (first 100 chars)
+                    # Generate a concise summary
                     summary = content[:100] + "..." if len(content) > 100 else content
-                    
-                    print(f"   {i}. Storing: {content[:50]}...")
                     
                     result = insert_tool.execute(
                         content=content,
@@ -1085,52 +1044,35 @@ class Agent:
                     
                     if result.status.value == "success":
                         stored_count += 1
-                        print(f"      ✅ Success")
                     else:
                         failed_count += 1
-                        print(f"      ❌ Failed: {result.error}")
                         logger.warning(f"Failed to store fact #{i}: {result.error}")
                         
                 except Exception as e:
                     failed_count += 1
-                    print(f"      ❌ Exception: {e}")
                     logger.error(f"Error storing fact #{i} in archival: {e}")
             
-            if stored_count > 0:
-                print(f"\n✅ Successfully stored {stored_count}/{len(facts)} facts")
-                logger.info(
-                    f"Successfully stored {stored_count}/{len(facts)} facts in Qdrant "
-                    f"({failed_count} failed)"
-                )
-            else:
-                print(f"\n⚠️  No facts were stored (extracted {len(facts)}, all failed)")
-                logger.warning(f"No facts were stored (extracted {len(facts)}, all failed)")
+            logger.info(
+                f"Stored {stored_count}/{len(facts)} facts in Qdrant "
+                f"({failed_count} failed or skipped)"
+            )
             
-            # 7. Trim conversation history (keep recent 10 turns)
+            # 7. Trim conversation history
             old_count = len(self.conversation_history)
             self._trim_conversation_history(keep_recent=keep_recent)
             new_count = len(self.conversation_history)
             
-            print(f"\n✂️  Trimmed conversation: {old_count} → {new_count} messages")
-            
             logger.info(
                 f"Context extraction complete: "
-                f"{stored_count} facts archived to Qdrant, "
+                f"{stored_count} facts archived, "
                 f"conversation trimmed from {old_count} to {new_count} messages"
             )
             
             # Update last_updated timestamp
             self.last_updated = datetime.now(timezone.utc)
             
-            print("=" * 70)
-            print("✅ CONTEXT EXTRACTION DEBUG - Complete")
-            print("=" * 70 + "\n")
-            
         except Exception as e:
-            print(f"\n❌ CONTEXT EXTRACTION FAILED: {e}")
-            logger.error(f"Context extraction failed: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Context extraction failed: {e}", exc_info=True)
             # Don't raise - extraction failure shouldn't crash the agent
 
     def _build_extraction_prompt(self, 
