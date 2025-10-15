@@ -17,6 +17,77 @@ from enum import Enum
 
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# Custom Exceptions
+# ============================================================================
+
+class ToolError(Exception):
+    """Base exception for all tool-related errors."""
+    pass
+
+
+class ToolNotFoundError(ToolError):
+    """Raised when attempting to use a tool that doesn't exist."""
+    
+    def __init__(self, tool_name: str, available_tools: Optional[List[str]] = None):
+        self.tool_name = tool_name
+        self.available_tools = available_tools
+        
+        message = f"Tool '{tool_name}' not found in registry"
+        
+        if available_tools:
+            # Suggest similar tool names (simple similarity check)
+            suggestions = [t for t in available_tools if tool_name.lower() in t.lower()]
+            if suggestions:
+                message += f". Did you mean: {', '.join(suggestions)}?"
+            elif len(available_tools) <= 10:
+                message += f". Available tools: {', '.join(available_tools)}"
+        
+        super().__init__(message)
+
+
+class ToolExecutionError(ToolError):
+    """Raised when a tool fails during execution."""
+    
+    def __init__(self, tool_name: str, original_error: Exception, context: Optional[Dict[str, Any]] = None):
+        self.tool_name = tool_name
+        self.original_error = original_error
+        self.context = context or {}
+        
+        message = f"Tool '{tool_name}' execution failed: {str(original_error)}"
+        
+        if context:
+            message += f"\nContext: {context}"
+        
+        super().__init__(message)
+
+
+class ToolValidationError(ToolError):
+    """Raised when tool parameters fail validation."""
+    
+    def __init__(self, tool_name: str, param_name: str, validation_message: str, value: Any = None):
+        self.tool_name = tool_name
+        self.param_name = param_name
+        self.validation_message = validation_message
+        self.value = value
+        
+        message = f"Tool '{tool_name}' parameter '{param_name}' validation failed: {validation_message}"
+        
+        if value is not None:
+            message += f"\nProvided value: {value}"
+        
+        super().__init__(message)
+
+
+class ToolRegistrationError(ToolError):
+    """Raised when tool registration fails."""
+    
+    def __init__(self, tool_name: str, reason: str):
+        self.tool_name = tool_name
+        self.reason = reason
+        
+        message = f"Failed to register tool '{tool_name}': {reason}"
+        super().__init__(message)
 
 # ============================================================================
 # Tool Result Structures
@@ -386,12 +457,13 @@ class Tool:
     
     def execute(self, **kwargs) -> ToolResult:
         """
-        Execute the tool with given arguments and validation.
+        Execute the tool with enhanced error handling.
         
         Includes:
-        - Parameter validation against constraints
+        - Parameter validation with detailed error messages
         - Retry logic for transient failures (if enabled)
-        - Detailed error reporting
+        - Rich error context for debugging
+        - Graceful error recovery
         
         Args:
             **kwargs: Tool arguments
@@ -400,13 +472,30 @@ class Tool:
             ToolResult from execution
         """
         # Step 1: Validate parameters first
-        is_valid, error_msg = self.validate_parameters(**kwargs)
-        if not is_valid:
+        try:
+            is_valid, error_msg = self.validate_parameters(**kwargs)
+            if not is_valid:
+                # Return detailed validation error
+                logger.error(f"Validation failed for tool '{self.name}': {error_msg}")
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content="",
+                    error=f"Parameter validation failed: {error_msg}",
+                    metadata={
+                        "tool": self.name,
+                        "error_type": "validation",
+                        "validation_error": True,
+                        "parameters": kwargs
+                    }
+                )
+        except Exception as e:
+            # Validation itself failed (shouldn't happen, but be safe)
+            logger.error(f"Validation error for tool '{self.name}': {e}")
             return ToolResult(
                 status=ToolStatus.ERROR,
                 content="",
-                error=f"Parameter validation failed: {error_msg}",
-                metadata={"tool": self.name, "validation_error": True}
+                error=f"Parameter validation error: {str(e)}",
+                metadata={"tool": self.name, "error_type": "validation_exception"}
             )
         
         # Step 2: Execute with retry logic if enabled
@@ -416,45 +505,64 @@ class Tool:
         while attempts <= (self.max_retries if self.retry_on_error else 0):
             try:
                 # Execute the actual function
+                logger.debug(f"Executing tool '{self.name}' (attempt {attempts + 1})")
                 result = self.func(**kwargs)
                 
                 # Step 3: Wrap result in ToolResult if needed
                 if isinstance(result, ToolResult):
-                    # Already a ToolResult, return as-is
+                    # Already a ToolResult, add attempt metadata
+                    if attempts > 0:
+                        result.metadata["attempts"] = attempts + 1
+                        result.metadata["retried"] = True
                     return result
                 else:
                     # Wrap simple return value in ToolResult
                     return ToolResult(
                         status=ToolStatus.SUCCESS,
                         content=str(result),
-                        metadata={"tool": self.name, "attempts": attempts + 1}
+                        metadata={
+                            "tool": self.name,
+                            "attempts": attempts + 1,
+                            "retried": attempts > 0
+                        }
                     )
-                    
+            
             except Exception as e:
                 last_error = e
                 attempts += 1
+                
+                # Log the error with context
+                error_context = {
+                    "tool": self.name,
+                    "attempt": attempts,
+                    "max_retries": self.max_retries,
+                    "parameters": kwargs,
+                    "exception_type": type(e).__name__
+                }
                 
                 # Check if we should retry
                 if self.retry_on_error and attempts <= self.max_retries:
                     logger.warning(
                         f"Tool '{self.name}' failed (attempt {attempts}/{self.max_retries}): {e}. "
-                        f"Retrying..."
+                        f"Retrying in {0.5 * attempts}s...",
+                        extra=error_context
                     )
                     import time
-                    time.sleep(0.5 * attempts)  # Exponential backoff: 0.5s, 1s, 1.5s
+                    time.sleep(0.5 * attempts)  # Exponential backoff
                     continue
                 else:
-                    # No more retries or retry not enabled - return error
-                    logger.error(f"Tool '{self.name}' execution failed after {attempts} attempt(s): {e}")
+                    # No more retries - return detailed error
+                    logger.error(
+                        f"Tool '{self.name}' execution failed after {attempts} attempt(s): {e}",
+                        extra=error_context,
+                        exc_info=True  # Include stack trace in logs
+                    )
+                    
                     return ToolResult(
                         status=ToolStatus.ERROR,
                         content="",
-                        error=f"Tool execution failed: {str(e)}",
-                        metadata={
-                            "tool": self.name,
-                            "attempts": attempts,
-                            "exception_type": type(e).__name__
-                        }
+                        error=self._format_error_message(e, attempts),
+                        metadata=error_context
                     )
         
         # This should never be reached, but just in case
@@ -462,8 +570,40 @@ class Tool:
             status=ToolStatus.ERROR,
             content="",
             error=f"Tool execution failed unexpectedly: {last_error}",
-            metadata={"tool": self.name, "unexpected_failure": True}
+            metadata={
+                "tool": self.name,
+                "error_type": "unexpected_failure",
+                "exception": str(last_error)
+            }
         )
+
+    def _format_error_message(self, exception: Exception, attempts: int) -> str:
+        """
+        Format a user-friendly error message from an exception.
+        
+        Args:
+            exception: The exception that occurred
+            attempts: Number of attempts made
+            
+        Returns:
+            Formatted error message
+        """
+        error_msg = f"Tool execution failed: {str(exception)}"
+        
+        if attempts > 1:
+            error_msg += f" (after {attempts} attempts)"
+        
+        # Add helpful hints based on exception type
+        if isinstance(exception, FileNotFoundError):
+            error_msg += "\nHint: Check that the file path is correct and the file exists."
+        elif isinstance(exception, PermissionError):
+            error_msg += "\nHint: Check file permissions or try running with appropriate access."
+        elif isinstance(exception, ValueError):
+            error_msg += "\nHint: Check that parameter values are in the correct format."
+        elif isinstance(exception, TypeError):
+            error_msg += "\nHint: Check that parameter types match the expected types."
+        
+        return error_msg
     
     def __call__(self, **kwargs) -> ToolResult:
         """Make tool callable."""
@@ -497,19 +637,36 @@ class ToolRegistry:
     
     def register(self, tool: Tool):
         """
-        Register a tool in the registry.
+        Register a tool with validation and error handling.
         
         Args:
             tool: Tool to register
             
         Raises:
-            ValueError: If tool name already exists
+            ToolRegistrationError: If registration fails
         """
-        if tool.name in self._tools:
-            raise ValueError(f"Tool '{tool.name}' already registered")
+        # Validate tool before registration
+        if not tool.name:
+            raise ToolRegistrationError("", "Tool name cannot be empty")
         
-        self._tools[tool.name] = tool
-        logger.info(f"Registered tool: {tool.name}")
+        if not tool.description:
+            logger.warning(f"Tool '{tool.name}' registered without description")
+        
+        if tool.name in self._tools:
+            raise ToolRegistrationError(
+                tool.name,
+                "Tool with this name already exists"
+            )
+        
+        # Register the tool
+        try:
+            self._tools[tool.name] = tool
+            logger.info(f"Registered tool: {tool.name} (category: {tool.category.value})")
+        except Exception as e:
+            raise ToolRegistrationError(
+                tool.name,
+                f"Registration failed: {str(e)}"
+            )
     
     def unregister(self, tool_name: str):
         """
