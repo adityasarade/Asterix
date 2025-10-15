@@ -82,6 +82,41 @@ agent = Agent.load_state("agent_id")
 agent.chat("What were we discussing?")  # Remembers everything!
 ```
 
+## 🔍 Logging
+
+Asterix uses Python's standard logging module. By default, logs are not displayed. To enable logging:
+
+### Console Logging
+```python
+import logging
+
+# Show all logs
+logging.basicConfig(level=logging.INFO)
+
+# Or just show errors
+logging.basicConfig(level=logging.ERROR)
+```
+
+### File Logging
+```python
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    filename='asterix.log',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+```
+
+### Fine-grained Control
+```python
+import logging
+
+# Control specific modules
+logging.getLogger('asterix.agent').setLevel(logging.DEBUG)
+logging.getLogger('asterix.core').setLevel(logging.WARNING)
+```
+
 ---
 
 ## 📚 Configuration
