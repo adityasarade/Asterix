@@ -225,6 +225,94 @@ def generate_tool_schema(func: Callable,
 
     return schema
 
+# ============================================================================
+# Parameter Validation
+# ============================================================================
+
+@dataclass
+class ParameterConstraint:
+    """
+    Constraints for tool parameters.
+    
+    Allows defining validation rules for parameters beyond just type hints.
+    
+    Args:
+        min_value: Minimum value for numbers
+        max_value: Maximum value for numbers
+        min_length: Minimum length for strings/lists
+        max_length: Maximum length for strings/lists
+        pattern: Regex pattern for string validation
+        allowed_values: Specific allowed values (enum-like)
+        custom_validator: Custom validation function
+    """
+    min_value: Optional[Union[int, float]] = None
+    max_value: Optional[Union[int, float]] = None
+    min_length: Optional[int] = None
+    max_length: Optional[int] = None
+    pattern: Optional[str] = None
+    allowed_values: Optional[List[Any]] = None
+    custom_validator: Optional[Callable[[Any], bool]] = None
+    
+    def validate(self, value: Any, param_name: str) -> tuple[bool, Optional[str]]:
+        """
+        Validate a value against constraints.
+        
+        Args:
+            value: Value to validate
+            param_name: Parameter name (for error messages)
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        # Min/max value validation
+        if self.min_value is not None and value < self.min_value:
+            return False, f"{param_name} must be >= {self.min_value}, got {value}"
+        if self.max_value is not None and value > self.max_value:
+            return False, f"{param_name} must be <= {self.max_value}, got {value}"
+        
+        # Length validation
+        if hasattr(value, '__len__'):
+            length = len(value)
+            if self.min_length is not None and length < self.min_length:
+                return False, f"{param_name} length must be >= {self.min_length}, got {length}"
+            if self.max_length is not None and length > self.max_length:
+                return False, f"{param_name} length must be <= {self.max_length}, got {length}"
+        
+        # Pattern validation for strings
+        if self.pattern and isinstance(value, str):
+            import re
+            if not re.match(self.pattern, value):
+                return False, f"{param_name} must match pattern '{self.pattern}'"
+        
+        # Allowed values (enum-like)
+        if self.allowed_values is not None and value not in self.allowed_values:
+            return False, f"{param_name} must be one of {self.allowed_values}, got {value}"
+        
+        # Custom validator
+        if self.custom_validator:
+            try:
+                if not self.custom_validator(value):
+                    return False, f"{param_name} failed custom validation"
+            except Exception as e:
+                return False, f"{param_name} validation error: {str(e)}"
+        
+        return True, None
+
+
+class ToolCategory(Enum):
+    """
+    Categories for organizing tools.
+    
+    Helps users find relevant tools and allows filtering by category.
+    """
+    MEMORY = "memory"              # Memory management tools
+    FILE_OPS = "file_operations"   # File reading/writing
+    WEB = "web"                    # Web scraping, API calls
+    SHELL = "shell"                # Shell commands
+    DATA = "data_processing"       # Data analysis, transformation
+    COMMUNICATION = "communication" # Email, messaging
+    CUSTOM = "custom"              # User-defined tools
+    OTHER = "other"                # Uncategorized
 
 # ============================================================================
 # Base Tool Class
@@ -234,126 +322,148 @@ class Tool:
     """
     Base class for all agent tools.
     
-    Tools are callable objects that the agent can use during conversations.
-    Each tool has:
-    - A name (unique identifier)
-    - A description (for LLM understanding)
-    - A schema (OpenAI function calling format)
-    - An execute method (the actual implementation)
+    Tools are callable functions that agents can invoke during conversations.
+    They have a name, description, and automatically generated schema for LLM function calling.
     
-    Subclass this to create new tools, or use the @tool decorator on functions.
-    
-    Example:
-        >>> class ReadFileTool(Tool):
-        ...     def __init__(self):
-        ...         super().__init__(
-        ...             name="read_file",
-        ...             description="Read contents of a file from disk"
-        ...         )
-        ...     
-        ...     def execute(self, filepath: str) -> ToolResult:
-        ...         try:
-        ...             with open(filepath, 'r') as f:
-        ...                 content = f.read()
-        ...             return ToolResult(
-        ...                 status=ToolStatus.SUCCESS,
-        ...                 content=content,
-        ...                 metadata={"filepath": filepath}
-        ...             )
-        ...         except Exception as e:
-        ...             return ToolResult(
-        ...                 status=ToolStatus.ERROR,
-        ...                 content="",
-        ...                 error=str(e)
-        ...             )
+    Args:
+        name: Unique tool name
+        description: What the tool does (shown to LLM)
+        func: The actual function to execute
+        schema: OpenAI function schema (auto-generated if not provided)
+        category: Tool category for organization
+        constraints: Parameter validation constraints
+        examples: Usage examples for documentation
+        retry_on_error: Whether to retry on transient failures
+        max_retries: Maximum retry attempts
     """
     
-    def __init__(self, 
-                name: str,
-                description: str,
-                func: Optional[Callable] = None,
-                schema: Optional[Dict[str, Any]] = None):
-        """
-        Initialize a tool.
-        
-        Args:
-            name: Tool name (unique identifier)
-            description: Tool description for LLM
-            func: Optional function implementation
-            schema: Optional pre-computed schema (auto-generated if not provided)
-        """
+    def __init__(self,
+                 name: str,
+                 description: str,
+                 func: Callable,
+                 schema: Optional[Dict[str, Any]] = None,
+                 category: ToolCategory = ToolCategory.CUSTOM,
+                 constraints: Optional[Dict[str, ParameterConstraint]] = None,
+                 examples: Optional[List[str]] = None,
+                 retry_on_error: bool = False,
+                 max_retries: int = 3):
+        """Initialize tool with enhanced features."""
         self.name = name
         self.description = description
-        self._func = func
+        self.func = func
+        self.category = category
+        self.constraints = constraints or {}
+        self.examples = examples or []
+        self.retry_on_error = retry_on_error
+        self.max_retries = max_retries
+        self.schema = schema or generate_tool_schema(func, name, description)
         
-        # Generate or use provided schema
-        if schema:
-            # Schema already provided - ensure it has the correct format
-            if "type" not in schema:
-                # Wrap it in OpenAI format
-                self.schema = {
-                    "type": "function",
-                    "function": schema
-                }
-            else:
-                self.schema = schema
-        elif func:
-            self.schema = generate_tool_schema(func, name, description)
-        else:
-            # Default schema - will be overridden by subclasses
-            self.schema = {
-                "type": "function",
-                "function": {
-                    "name": name,
-                    "description": description,
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                }
-            }
+        # Add category to schema metadata
+        if 'metadata' not in self.schema:
+            self.schema['metadata'] = {}
+        self.schema['metadata']['category'] = category.value
+        self.schema['metadata']['examples'] = self.examples
         
-        logger.debug(f"Initialized tool: {name}")
+        logger.debug(f"Initialized tool '{name}' in category '{category.value}'")
+    
+    def validate_parameters(self, **kwargs) -> tuple[bool, Optional[str]]:
+        """
+        Validate parameters against constraints.
+        
+        Args:
+            **kwargs: Parameters to validate
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        for param_name, constraint in self.constraints.items():
+            if param_name in kwargs:
+                is_valid, error_msg = constraint.validate(kwargs[param_name], param_name)
+                if not is_valid:
+                    return False, error_msg
+        
+        return True, None
     
     def execute(self, **kwargs) -> ToolResult:
         """
-        Execute the tool with provided arguments.
+        Execute the tool with given arguments and validation.
         
-        This method should be overridden by subclasses, or will use
-        the provided function if initialized with one.
+        Includes:
+        - Parameter validation against constraints
+        - Retry logic for transient failures (if enabled)
+        - Detailed error reporting
         
         Args:
             **kwargs: Tool arguments
             
         Returns:
-            ToolResult with execution status and output
+            ToolResult from execution
         """
-        if self._func:
+        # Step 1: Validate parameters first
+        is_valid, error_msg = self.validate_parameters(**kwargs)
+        if not is_valid:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content="",
+                error=f"Parameter validation failed: {error_msg}",
+                metadata={"tool": self.name, "validation_error": True}
+            )
+        
+        # Step 2: Execute with retry logic if enabled
+        attempts = 0
+        last_error = None
+        
+        while attempts <= (self.max_retries if self.retry_on_error else 0):
             try:
-                result = self._func(**kwargs)
+                # Execute the actual function
+                result = self.func(**kwargs)
                 
-                # If function returns ToolResult, use it directly
+                # Step 3: Wrap result in ToolResult if needed
                 if isinstance(result, ToolResult):
+                    # Already a ToolResult, return as-is
                     return result
-                
-                # Otherwise wrap in ToolResult
-                return ToolResult(
-                    status=ToolStatus.SUCCESS,
-                    content=str(result),
-                    metadata={"tool": self.name}
-                )
-                
+                else:
+                    # Wrap simple return value in ToolResult
+                    return ToolResult(
+                        status=ToolStatus.SUCCESS,
+                        content=str(result),
+                        metadata={"tool": self.name, "attempts": attempts + 1}
+                    )
+                    
             except Exception as e:
-                logger.error(f"Tool {self.name} execution failed: {e}")
-                return ToolResult(
-                    status=ToolStatus.ERROR,
-                    content="",
-                    error=f"Tool execution failed: {str(e)}",
-                    metadata={"tool": self.name}
-                )
-        else:
-            raise NotImplementedError(f"Tool {self.name} does not implement execute()")
+                last_error = e
+                attempts += 1
+                
+                # Check if we should retry
+                if self.retry_on_error and attempts <= self.max_retries:
+                    logger.warning(
+                        f"Tool '{self.name}' failed (attempt {attempts}/{self.max_retries}): {e}. "
+                        f"Retrying..."
+                    )
+                    import time
+                    time.sleep(0.5 * attempts)  # Exponential backoff: 0.5s, 1s, 1.5s
+                    continue
+                else:
+                    # No more retries or retry not enabled - return error
+                    logger.error(f"Tool '{self.name}' execution failed after {attempts} attempt(s): {e}")
+                    return ToolResult(
+                        status=ToolStatus.ERROR,
+                        content="",
+                        error=f"Tool execution failed: {str(e)}",
+                        metadata={
+                            "tool": self.name,
+                            "attempts": attempts,
+                            "exception_type": type(e).__name__
+                        }
+                    )
+        
+        # This should never be reached, but just in case
+        return ToolResult(
+            status=ToolStatus.ERROR,
+            content="",
+            error=f"Tool execution failed unexpectedly: {last_error}",
+            metadata={"tool": self.name, "unexpected_failure": True}
+        )
     
     def __call__(self, **kwargs) -> ToolResult:
         """Make tool callable."""
