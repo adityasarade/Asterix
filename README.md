@@ -18,7 +18,9 @@ Asterix is a lightweight Python library for building AI agents that can remember
 - **🧠 Editable Memory Blocks** - Agents can read and write their own memory via built-in tools
 - **💾 Persistent Storage** - State saves across sessions (JSON/SQLite backends)
 - **🔍 Semantic Search** - Qdrant Cloud integration for long-term memory retrieval
-- **🛠️ Tool System** - Easy decorator pattern for custom capabilities
+- **🛠️ Enhanced Tool System** - Easy decorator pattern with parameter validation, retry logic, and categories
+- **📚 Auto-Documentation** - Tools automatically generate markdown/JSON documentation
+- **🚨 Smart Error Handling** - Helpful error messages with suggestions and context
 - **🔄 Multi-Model Support** - Works with Groq, OpenAI, and extensible to others
 - **📦 No Server Required** - Pure Python library, runs anywhere
 
@@ -69,6 +71,123 @@ def read_file(filepath: str) -> str:
 
 # Now your agent can read files
 response = agent.chat("Read config.yaml and summarize the settings")
+```
+
+## 🛠️ Advanced Tool Features
+
+### Parameter Validation
+
+Tools can define validation constraints for their parameters:
+```python
+from asterix.tools import tool, ParameterConstraint
+
+@agent.tool(
+    name="create_user",
+    description="Create a new user account",
+    constraints={
+        "username": ParameterConstraint(
+            min_length=3,
+            max_length=20,
+            pattern=r'^[a-zA-Z0-9_]+$'
+        ),
+        "age": ParameterConstraint(
+            min_value=13,
+            max_value=120
+        )
+    }
+)
+def create_user(username: str, age: int) -> str:
+    return f"Created user {username}, age {age}"
+```
+
+### Tool Categories
+
+Organize tools by category for better discovery:
+```python
+from asterix.tools import ToolCategory
+
+# Tools are automatically categorized
+memory_tools = agent._tool_registry.get_by_category(ToolCategory.MEMORY)
+file_tools = agent._tool_registry.get_by_category(ToolCategory.FILE_OPS)
+
+# List all categories with counts
+categories = agent._tool_registry.list_categories()
+print(categories)  # {"memory": 5, "file_operations": 3, "custom": 2}
+```
+
+### Retry Logic
+
+Enable automatic retries for transient failures:
+```python
+from asterix.tools import Tool
+
+@agent.tool(
+    name="fetch_data",
+    description="Fetch data from API",
+    retry_on_error=True,
+    max_retries=3
+)
+def fetch_data(url: str) -> str:
+    # Will retry up to 3 times with exponential backoff
+    response = requests.get(url)
+    return response.text
+```
+
+### Error Handling
+
+Rich error context and helpful suggestions:
+```python
+# Automatic error suggestions
+try:
+    agent.get_tool("read_fil")  # Typo!
+except ToolNotFoundError as e:
+    print(e)  # "Tool 'read_fil' not found. Did you mean: read_file?"
+```
+
+### Auto-Documentation
+
+Generate documentation for your tools:
+```python
+# Single tool documentation
+docs = agent._tool_registry.generate_tool_docs("read_file", format="markdown")
+print(docs)
+
+# Complete registry documentation
+full_docs = agent._tool_registry.generate_registry_docs(
+    format="markdown",
+    group_by_category=True
+)
+
+# Save to file
+with open("TOOL_REFERENCE.md", "w") as f:
+    f.write(full_docs)
+
+# Export as JSON catalog
+catalog = agent._tool_registry.export_tool_catalog("json")
+
+# Quick reference guide
+quick_ref = agent._tool_registry.generate_quick_reference()
+```
+
+### Tool Discovery
+
+Find tools by various criteria:
+```python
+# Filter by category
+memory_tools = agent._tool_registry.filter_tools(category=ToolCategory.MEMORY)
+
+# Filter by name pattern
+search_tools = agent._tool_registry.filter_tools(name_pattern="search")
+
+# Filter by capabilities
+validated_tools = agent._tool_registry.filter_tools(has_validation=True)
+retry_tools = agent._tool_registry.filter_tools(has_retry=True)
+
+# Get detailed tool info
+info = agent._tool_registry.get_tool_info("core_memory_append")
+print(f"Category: {info['category']}")
+print(f"Constraints: {info['constraints']}")
+print(f"Examples: {info['examples']}")
 ```
 
 ### Save & Load State
@@ -189,6 +308,30 @@ Load from YAML:
 agent = Agent.from_yaml("agent_config.yaml")
 ```
 
+### Tool Configuration
+
+Configure tool behavior when registering:
+```python
+from asterix.tools import Tool, ToolCategory, ParameterConstraint
+
+@agent.tool(
+    name="advanced_tool",
+    description="Tool with full configuration",
+    category=ToolCategory.DATA,
+    constraints={
+        "query": ParameterConstraint(min_length=1, max_length=500)
+    },
+    examples=[
+        "advanced_tool(query='search term')",
+        "advanced_tool(query='another example')"
+    ],
+    retry_on_error=True,
+    max_retries=3
+)
+def advanced_tool(query: str) -> str:
+    return f"Processed: {query}"
+```
+
 ---
 
 ## 🧠 Memory System
@@ -261,6 +404,34 @@ def search_web(query: str) -> str:
 response = agent.chat("List all Python files in the current directory")
 ```
 
+### Tool Development
+
+Creating custom tools with full features:
+```python
+from asterix.tools import Tool, ToolCategory, ParameterConstraint
+
+class MyCustomTool(Tool):
+    def __init__(self):
+        super().__init__(
+            name="my_tool",
+            description="Custom tool with validation",
+            func=self.execute,
+            category=ToolCategory.CUSTOM,
+            constraints={
+                "param": ParameterConstraint(min_length=5)
+            },
+            retry_on_error=True,
+            max_retries=2
+        )
+    
+    def execute(self, param: str) -> str:
+        # Your tool logic here
+        return f"Processed: {param}"
+
+# Register with agent
+agent.register_tool(MyCustomTool())
+```
+
 ---
 
 ## 💾 State Persistence
@@ -298,9 +469,62 @@ class RedisBackend(StateBackend):
 agent = Agent(..., state_backend=RedisBackend())
 ```
 
+## ⚠️ Error Handling
+
+Asterix provides detailed error messages with context and suggestions:
+
+### Tool Errors
+```python
+from asterix.tools import ToolNotFoundError, ToolExecutionError, ToolValidationError
+
+try:
+    # Typo in tool name
+    agent._tool_registry.execute_tool("read_fle", filepath="test.txt")
+except ToolNotFoundError as e:
+    print(e)  # Suggests similar tool names
+    
+try:
+    # Invalid parameter
+    agent._tool_registry.execute_tool("create_user", username="ab", age=5)
+except ToolValidationError as e:
+    print(e)  # Shows validation constraints and provided value
+```
+
+### Validation Errors
+```python
+# Parameter validation errors include helpful context
+# "Tool 'create_user' parameter 'username' validation failed: 
+#  username length must be >= 3, got 2
+#  Provided value: ab"
+```
+
+### Error Context
+
+All tool errors include rich metadata for debugging:
+```python
+try:
+    result = tool.execute(invalid_param="value")
+except Exception as e:
+    # Error metadata includes:
+    # - Tool name
+    # - Exception type
+    # - Parameters provided
+    # - Retry attempts (if applicable)
+    # - Full stack trace in logs
+    pass
+```
+
 ---
 
 ## 📖 Examples
+
+For complete working examples, see the [`examples/`](examples/) directory:
+
+- [`basic_agent.py`](examples/basic_agent.py) - Simple conversation agent
+- [`custom_tools.py`](examples/custom_tools.py) - Tool registration with validation
+- [`persistent_agent.py`](examples/persistent_agent.py) - State save/load demonstration
+- [`tool_documentation.py`](examples/tool_documentation.py) - Auto-documentation generation
+- [`cli_agent.py`](examples/cli_agent.py) - Full-featured CLI agent with file operations
 
 ### CLI Agent with File Operations
 
@@ -424,6 +648,48 @@ pytest tests/test_agent.py::test_memory_tools
 - [ ] Performance optimizations
 - [ ] Extended documentation
 - [ ] Tutorial series
+
+## 📚 Tool Reference
+
+### Built-in Memory Tools
+
+Asterix provides 5 built-in tools for memory management:
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `core_memory_append` | memory | Add content to a memory block |
+| `core_memory_replace` | memory | Replace content in a memory block |
+| `archival_memory_insert` | memory | Store information in long-term memory (Qdrant) |
+| `archival_memory_search` | memory | Search long-term memory |
+| `conversation_search` | memory | Search conversation history |
+
+### Tool System Features
+
+- **Automatic Schema Generation** - Type hints → OpenAI function schemas
+- **Parameter Validation** - Min/max values, lengths, patterns, allowed values
+- **Category Organization** - Group tools by purpose (memory, file_ops, web, etc.)
+- **Retry Logic** - Automatic retries with exponential backoff
+- **Error Recovery** - Smart error messages with hints and suggestions
+- **Auto-Documentation** - Generate markdown/JSON/YAML docs from metadata
+- **Tool Discovery** - Filter and search tools by name, category, capabilities
+
+### Generate Documentation
+```bash
+# In Python
+from asterix import Agent
+
+agent = Agent()
+
+# Generate tool reference
+docs = agent._tool_registry.generate_registry_docs(format="markdown")
+with open("TOOL_REFERENCE.md", "w") as f:
+    f.write(docs)
+
+# Export tool catalog
+catalog = agent._tool_registry.export_tool_catalog("json")
+with open("tool_catalog.json", "w") as f:
+    f.write(catalog)
+```
 
 ---
 
