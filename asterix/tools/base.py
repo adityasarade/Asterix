@@ -480,13 +480,14 @@ class Tool:
 
 class ToolRegistry:
     """
-    Registry for managing available tools.
+    Registry for managing available tools with category support.
     
     Keeps track of all registered tools and provides methods for:
     - Adding/removing tools
     - Getting tool schemas for LLM
     - Executing tools by name
-    - Validating tool calls
+    - Filtering by category
+    - Tool discovery and organization
     """
     
     def __init__(self):
@@ -608,6 +609,210 @@ class ToolRegistry:
         """String representation."""
         return f"ToolRegistry(tools={list(self._tools.keys())})"
 
+    # ========================================================================
+    # Category-Based Methods
+    # ========================================================================
+    
+    def get_by_category(self, category: ToolCategory) -> List[Tool]:
+        """
+        Get all tools in a specific category.
+        
+        Useful for showing users only tools relevant to their current task
+        (e.g., only show file operation tools when working with files).
+        
+        Args:
+            category: ToolCategory enum value to filter by
+            
+        Returns:
+            List of tools in the specified category
+            
+        Example:
+            >>> memory_tools = registry.get_by_category(ToolCategory.MEMORY)
+            >>> for tool in memory_tools:
+            ...     print(f"- {tool.name}: {tool.description}")
+        """
+        return [
+            tool for tool in self._tools.values()
+            if tool.category == category
+        ]
+    
+    def list_tools(self, include_schemas: bool = False) -> List[Dict[str, Any]]:
+        """
+        List all tools with their metadata.
+        
+        Returns a structured list of all tools with key information
+        for display or documentation purposes.
+        
+        Args:
+            include_schemas: If True, include full OpenAI function schemas
+            
+        Returns:
+            List of dictionaries with tool information
+            
+        Example:
+            >>> tools = registry.list_tools()
+            >>> for tool in tools:
+            ...     print(f"{tool['name']} ({tool['category']})")
+            ...     print(f"  {tool['description']}")
+        """
+        tools_list = []
+        
+        for tool in self._tools.values():
+            tool_info = {
+                "name": tool.name,
+                "description": tool.description,
+                "category": tool.category.value,
+                "has_validation": len(tool.constraints) > 0,
+                "retry_enabled": tool.retry_on_error,
+                "max_retries": tool.max_retries if tool.retry_on_error else 0,
+                "examples": tool.examples
+            }
+            
+            if include_schemas:
+                tool_info["schema"] = tool.schema
+            
+            tools_list.append(tool_info)
+        
+        return tools_list
+    
+    def list_categories(self) -> Dict[str, int]:
+        """
+        List all tool categories with counts.
+        
+        Shows how many tools are registered in each category,
+        useful for understanding the distribution of capabilities.
+        
+        Returns:
+            Dictionary mapping category names to tool counts
+            
+        Example:
+            >>> categories = registry.list_categories()
+            >>> for category, count in categories.items():
+            ...     print(f"{category}: {count} tools")
+            # memory: 5 tools
+            # file_operations: 3 tools
+            # custom: 2 tools
+        """
+        category_counts: Dict[str, int] = {}
+        
+        for tool in self._tools.values():
+            category_name = tool.category.value
+            category_counts[category_name] = category_counts.get(category_name, 0) + 1
+        
+        return category_counts
+    
+    def count_by_category(self, category: ToolCategory) -> int:
+        """
+        Count tools in a specific category.
+        
+        Args:
+            category: ToolCategory to count
+            
+        Returns:
+            Number of tools in that category
+            
+        Example:
+            >>> memory_count = registry.count_by_category(ToolCategory.MEMORY)
+            >>> print(f"Memory tools available: {memory_count}")
+        """
+        return len(self.get_by_category(category))
+    
+    def filter_tools(self,
+                    category: Optional[ToolCategory] = None,
+                    name_pattern: Optional[str] = None,
+                    has_retry: Optional[bool] = None,
+                    has_validation: Optional[bool] = None) -> List[Tool]:
+        """
+        Advanced filtering of tools by multiple criteria.
+        
+        Allows combining multiple filters for precise tool discovery.
+        
+        Args:
+            category: Filter by tool category
+            name_pattern: Filter by name (case-insensitive substring match)
+            has_retry: Filter by retry capability (True/False/None for any)
+            has_validation: Filter by validation constraints (True/False/None for any)
+            
+        Returns:
+            List of tools matching all specified criteria
+            
+        Example:
+            >>> # Find all memory tools with validation
+            >>> tools = registry.filter_tools(
+            ...     category=ToolCategory.MEMORY,
+            ...     has_validation=True
+            ... )
+            >>> 
+            >>> # Find all tools with 'search' in the name
+            >>> search_tools = registry.filter_tools(name_pattern="search")
+        """
+        filtered = list(self._tools.values())
+        
+        # Filter by category
+        if category is not None:
+            filtered = [t for t in filtered if t.category == category]
+        
+        # Filter by name pattern (case-insensitive)
+        if name_pattern is not None:
+            pattern_lower = name_pattern.lower()
+            filtered = [t for t in filtered if pattern_lower in t.name.lower()]
+        
+        # Filter by retry capability
+        if has_retry is not None:
+            filtered = [t for t in filtered if t.retry_on_error == has_retry]
+        
+        # Filter by validation constraints
+        if has_validation is not None:
+            if has_validation:
+                filtered = [t for t in filtered if len(t.constraints) > 0]
+            else:
+                filtered = [t for t in filtered if len(t.constraints) == 0]
+        
+        return filtered
+    
+    def get_tool_info(self, tool_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get detailed information about a specific tool.
+        
+        Returns comprehensive metadata about a tool including its
+        category, validation rules, examples, and schema.
+        
+        Args:
+            tool_name: Name of the tool
+            
+        Returns:
+            Dictionary with tool information or None if not found
+            
+        Example:
+            >>> info = registry.get_tool_info("core_memory_append")
+            >>> print(f"Category: {info['category']}")
+            >>> print(f"Examples: {info['examples']}")
+        """
+        tool = self.get(tool_name)
+        
+        if not tool:
+            return None
+        
+        return {
+            "name": tool.name,
+            "description": tool.description,
+            "category": tool.category.value,
+            "constraints": {
+                param: {
+                    "min_value": c.min_value,
+                    "max_value": c.max_value,
+                    "min_length": c.min_length,
+                    "max_length": c.max_length,
+                    "pattern": c.pattern,
+                    "allowed_values": c.allowed_values
+                }
+                for param, c in tool.constraints.items()
+            },
+            "examples": tool.examples,
+            "retry_enabled": tool.retry_on_error,
+            "max_retries": tool.max_retries,
+            "schema": tool.schema
+        }
 
 # ============================================================================
 # Tool Decorator (for easy registration)
