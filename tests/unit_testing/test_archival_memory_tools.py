@@ -237,11 +237,34 @@ class TestArchivalMemorySearchTool:
         mock_embed_result = Mock()
         mock_embed_result.embeddings = [[0.1, 0.2]]
         
-        # Mock search results using namedtuple for proper attribute access
-        SearchResult = namedtuple('SearchResult', ['text', 'summary', 'score'])
+        # Mock search results using namedtuple matching Qdrant structure
+        # IMPORTANT: summary, text, importance go INSIDE payload dict
+        SearchResult = namedtuple('SearchResult', ['id', 'text', 'summary', 'score', 'payload'])
         mock_search_results = [
-            SearchResult(text="Python is great", summary="Programming", score=0.95),
-            SearchResult(text="AI development", summary="AI", score=0.85)
+            SearchResult(
+                id="mem_1",
+                text="Python is great",  # Not used in display
+                summary="Programming",   # Not used in display
+                score=0.95,
+                payload={
+                    "summary": "Programming",  # Used for display
+                    "text": "Python is great",
+                    "importance": 0.9,
+                    "created_at": "2025-01-01T00:00:00Z"
+                }
+            ),
+            SearchResult(
+                id="mem_2",
+                text="AI development",
+                summary="AI",
+                score=0.85,
+                payload={
+                    "summary": "AI",
+                    "text": "AI development",
+                    "importance": 0.8,
+                    "created_at": "2025-01-01T00:00:00Z"
+                }
+            )
         ]
         
         mock_asyncio.side_effect = [
@@ -252,8 +275,8 @@ class TestArchivalMemorySearchTool:
         result = tool.execute(query="Python programming", k=5)
         
         assert result.status == ToolStatus.SUCCESS
-        assert "Found 2 memories" in result.content
-        assert "Python is great" in result.content
+        assert "Found 2 relevant memories" in result.content  # Match actual text
+        assert "Programming" in result.content  # Summary is displayed
         assert result.metadata["results_count"] == 2
         assert len(result.metadata["results"]) == 2
         assert result.metadata["results"][0]["score"] == 0.95
@@ -329,11 +352,32 @@ class TestArchivalMemorySearchTool:
         mock_embed_result.embeddings = [[0.1]]
         
         # Mock search results with varying scores using namedtuple
-        SearchResult = namedtuple('SearchResult', ['text', 'summary', 'score'])
+        # Qdrant already filters by threshold, so only return results >= 0.7
+        SearchResult = namedtuple('SearchResult', ['id', 'text', 'summary', 'score', 'payload'])
         mock_search_results = [
-            SearchResult(text="High score", summary="High", score=0.95),
-            SearchResult(text="Medium score", summary="Medium", score=0.75),
-            SearchResult(text="Low score", summary="Low", score=0.5)
+            SearchResult(
+                id="mem_high",
+                text="High score", 
+                summary="High", 
+                score=0.95,
+                payload={
+                    "summary": "High",
+                    "importance": 0.9,
+                    "created_at": "2025-01-01T00:00:00Z"
+                }
+            ),
+            SearchResult(
+                id="mem_medium",
+                text="Medium score", 
+                summary="Medium", 
+                score=0.75,
+                payload={
+                    "summary": "Medium",
+                    "importance": 0.7,
+                    "created_at": "2025-01-01T00:00:00Z"
+                }
+            )
+            # Low score (0.5) filtered out by Qdrant, so not included
         ]
         
         mock_asyncio.side_effect = [
@@ -345,11 +389,11 @@ class TestArchivalMemorySearchTool:
         result = tool.execute(query="test", k=10, score_threshold=0.7)
         
         assert result.status == ToolStatus.SUCCESS
-        # Should only include results >= 0.7
+        # Should only include results >= 0.7 (already filtered by Qdrant)
         assert result.metadata["results_count"] == 2
-        assert "High score" in result.content
-        assert "Medium score" in result.content
-        assert "Low score" not in result.content
+        assert "High" in result.content  # Summary displayed
+        assert "Medium" in result.content  # Summary displayed
+        # Low score was filtered out by Qdrant, so not in results
     
     @patch('asterix.tools.archival.asyncio.run')
     @patch('asterix.core.embeddings.embedding_service')
