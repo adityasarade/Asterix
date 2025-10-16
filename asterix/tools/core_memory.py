@@ -80,6 +80,7 @@ class CoreMemoryAppendTool(Tool):
         super().__init__(
             name="core_memory_append",
             description="Append content to a memory block",
+            func=self.execute,
             schema=schema
         )
     
@@ -225,6 +226,7 @@ class CoreMemoryReplaceTool(Tool):
         super().__init__(
             name="core_memory_replace",
             description="Replace content in a memory block",
+            func=self.execute,
             schema=schema
         )
     
