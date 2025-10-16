@@ -87,6 +87,7 @@ class ConversationSearchTool(Tool):
         super().__init__(
             name="conversation_search",
             description="Search conversation history",
+            func=self.execute,
             schema=schema
         )
     
