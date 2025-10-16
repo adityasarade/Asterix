@@ -78,6 +78,7 @@ class ArchivalMemoryInsertTool(Tool):
         super().__init__(
             name="archival_memory_insert",
             description="Store information in long-term archival memory",
+            func=self.execute,
             schema=schema
         )
     
@@ -264,6 +265,7 @@ class ArchivalMemorySearchTool(Tool):
         super().__init__(
             name="archival_memory_search",
             description="Search long-term archival memory",
+            func=self.execute,
             schema=schema
         )
     
