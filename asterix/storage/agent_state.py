@@ -1,5 +1,5 @@
 """
-Asterix Agent State Storage Backends
+Asterix State Storage Backends
 
 Provides storage backends for agent state persistence:
 - JSON backend (default, simple)

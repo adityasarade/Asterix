@@ -149,7 +149,7 @@ class Agent:
         ...         "task": BlockConfig(size=1500, priority=1),
         ...         "notes": BlockConfig(size=1000, priority=2)
         ...     },
-        ...     model="groq/llama-3.3-70b-versatile"
+        ...     model="openai/gpt-5-mini"
         ... )
         >>> response = agent.chat("Hello! Remember that I like Python.")
         >>> agent.save_state()
@@ -158,7 +158,7 @@ class Agent:
     def __init__(self,
                  agent_id: Optional[str] = None,
                  blocks: Optional[Dict[str, BlockConfig]] = None,
-                 model: str = "groq/llama-3.3-70b-versatile",
+                 model: str = "openai/gpt-5-mini",
                  temperature: float = 0.1,
                  max_tokens: int = 1000,
                  max_heartbeat_steps: int = 10,
@@ -179,7 +179,7 @@ class Agent:
         
         Example:
             >>> # Simple initialization
-            >>> agent = Agent(model="groq/llama-3.3-70b-versatile")
+            >>> agent = Agent(model="openai/gpt-5-mini")
             
             >>> # With custom blocks
             >>> agent = Agent(
@@ -875,6 +875,8 @@ class Agent:
             "gpt-4-turbo-preview": 128000,
             "gpt-4": 8192,
             "gpt-3.5-turbo": 16385,
+            "gpt-4o": 128000,
+            "gpt-5-mini": 400000
         }
         
         # Get model context limit

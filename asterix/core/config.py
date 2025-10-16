@@ -209,7 +209,7 @@ class AgentConfig:
         ...         "task": BlockConfig(size=1500, priority=1),
         ...         "notes": BlockConfig(size=1000, priority=2)
         ...     },
-        ...     model="groq/llama-3.3-70b-versatile",
+        ...     model="openai/gpt-5-mini",
         ...     storage=StorageConfig(
         ...         qdrant_url="https://...",
         ...         qdrant_api_key="..."
@@ -221,7 +221,7 @@ class AgentConfig:
     blocks: Dict[str, BlockConfig] = field(default_factory=dict)
     
     # LLM settings (simple)
-    model: str = "groq/llama-3.3-70b-versatile"
+    model: str = "openai/gpt-5-mini"
     temperature: float = 0.1
     max_tokens: int = 1000
     max_heartbeat_steps: int = 10
@@ -263,7 +263,7 @@ class AgentConfig:
         Parse model string in format 'provider/model-name'.
         
         Args:
-            model: Model string (e.g., "groq/llama-3.3-70b-versatile")
+            model: Model string (e.g., "openai/gpt-5-mini")
             
         Returns:
             Tuple of (provider, model_name)
@@ -483,7 +483,7 @@ class ConfigurationManager:
             >>> # Create from scratch with overrides only
             >>> config = manager.load_agent_config(
             ...     agent_id="new_agent",
-            ...     model="groq/llama-3.3-70b-versatile",
+            ...     model="openai/gpt-5-mini",
             ...     blocks={"task": BlockConfig(size=1500)}
             ... )
         """
@@ -565,14 +565,14 @@ class ConfigurationManager:
         Supports two formats:
         1. New format (preferred):
            llm:
-             provider: "groq"
-             model: "llama-3.3-70b-versatile"
+             provider: "openai"
+             model: "gpt-5-mini"
              temperature: 0.1
              max_tokens: 1000
              timeout: 30
         
         2. Legacy format (backward compatible):
-           model: "groq/llama-3.3-70b-versatile"
+           model: "openai/gpt-5-mini"
            temperature: 0.1
            max_tokens: 1000
         
@@ -588,8 +588,8 @@ class ConfigurationManager:
         
         if llm_config:
             # New format: llm section exists
-            provider = llm_config.get("provider", "groq")
-            model_name = llm_config.get("model", "llama-3.3-70b-versatile")
+            provider = llm_config.get("provider", "openai")
+            model_name = llm_config.get("model", "gpt-5-mini")
             
             # Combine provider/model if provider specified
             if provider and model_name:
@@ -602,7 +602,7 @@ class ConfigurationManager:
             timeout = int(llm_config.get("timeout", 30))
         else:
             # Legacy format: settings at top level
-            model = yaml_config.get("model", "groq/llama-3.3-70b-versatile")
+            model = yaml_config.get("model", "openai/gpt-5-mini")
             temperature = float(yaml_config.get("temperature", 0.1))
             max_tokens = int(yaml_config.get("max_tokens", 1000))
             timeout = 30  # Default for legacy format

@@ -50,7 +50,7 @@ agent = Agent(
         "task": BlockConfig(size=1500, priority=1),
         "notes": BlockConfig(size=1000, priority=2)
     },
-    model="groq/llama-3.3-70b-versatile"
+    model="openai/gpt-5-mini"
 )
 
 # Chat with your agent
@@ -267,8 +267,8 @@ max_heartbeat_steps: 10
 
 # LLM Configuration
 llm:
-  provider: "groq"
-  model: "llama-3.3-70b-versatile"
+  provider: "openai"
+  model: "gpt-5-mini"
   temperature: 0.1
   max_tokens: 1000
 
@@ -537,7 +537,7 @@ agent = Agent(
         "current_task": BlockConfig(size=2000, priority=1),
         "file_context": BlockConfig(size=3000, priority=2)
     },
-    model="groq/llama-3.3-70b-versatile"
+    model="openai/gpt-5-mini"
 )
 
 @agent.tool(name="list_files")
@@ -561,14 +561,14 @@ agent.chat("List all Python files and review main.py for potential issues")
 main_agent = Agent(
     agent_id="orchestrator",
     blocks={"plan": BlockConfig(size=1500)},
-    model="groq/llama-3.3-70b-versatile"
+    model="openai/gpt-5-mini"
 )
 
 # Specialized agents
 code_reviewer = Agent(
     agent_id="reviewer",
     blocks={"code": BlockConfig(size=3000)},
-    model="groq/llama-3.3-70b-versatile"
+    model="openai/gpt-5-mini"
 )
 
 # Coordination

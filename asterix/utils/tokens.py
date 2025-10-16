@@ -79,6 +79,7 @@ class TokenCounter:
         # Model to encoder mapping
         model_encoders = {
             # OpenAI models
+            "gpt-5-mini": "o200k_base",
             "gpt-4": "cl100k_base",
             "gpt-4-turbo": "cl100k_base", 
             "gpt-4-turbo-preview": "cl100k_base",

@@ -236,7 +236,7 @@ class LLMProviderManager:
             
             # Make API call
             api_params = {
-                "model": "gpt-4-turbo-preview",
+                "model": "gpt-5-mini",
                 "messages": openai_messages,
                 "temperature": temperature or 0.1,
                 "max_tokens": max_tokens or 1000,
@@ -274,7 +274,7 @@ class LLMProviderManager:
             
             result = LLMResponse(
                 content=content,
-                model="gpt-4-turbo-preview",
+                model="gpt-5-mini",
                 provider="openai",
                 usage=usage,
                 processing_time=processing_time,
