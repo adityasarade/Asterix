@@ -145,10 +145,17 @@ class LLMProviderManager:
         
         try:
             # Prepare messages
-            groq_messages = [
-                {"role": msg.role, "content": msg.content}
-                for msg in messages
-            ]
+            groq_messages = []
+            for msg in messages:
+                if isinstance(msg, dict):
+                    # Already a dict, use as-is
+                    groq_messages.append(msg)
+                else:
+                    # LLMMessage object, convert to dict
+                    groq_messages.append({
+                        "role": msg.role,
+                        "content": msg.content
+                    })
             
             # Make API call
             api_params = {
@@ -229,10 +236,17 @@ class LLMProviderManager:
         
         try:
             # Prepare messages
-            openai_messages = [
-                {"role": msg.role, "content": msg.content}
-                for msg in messages
-            ]
+            openai_messages = []
+            for msg in messages:
+                if isinstance(msg, dict):
+                    # Already a dict, use as-is
+                    openai_messages.append(msg)
+                else:
+                    # LLMMessage object, convert to dict
+                    openai_messages.append({
+                        "role": msg.role,
+                        "content": msg.content
+                    })
             
             # Get model name
             model_name = "gpt-5-mini"

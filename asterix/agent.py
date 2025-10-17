@@ -589,12 +589,55 @@ class Agent:
             for step in range(max_steps):
                 logger.debug(f"Heartbeat step {step + 1}/{max_steps}")
                 
-                # Convert to LLMMessage format
-                formatted_messages = [
-                    LLMMessage(role=msg["role"], content=msg["content"])
-                    for msg in llm_messages
-                ]
-                
+                # Convert to format for LLM API
+                # Keep all fields (role, content, tool_calls, tool_call_id, name)
+                formatted_messages = []
+                for msg in llm_messages:
+                    formatted_msg = {
+                        "role": msg["role"],
+                        "content": msg.get("content", "")
+                    }
+                    
+                    # Preserve tool_calls if present (for assistant messages)
+                    if msg.get("tool_calls"):
+                        formatted_msg["tool_calls"] = msg["tool_calls"]
+                    
+                    # Preserve tool_call_id if present (for tool messages)
+                    if msg.get("tool_call_id"):
+                        formatted_msg["tool_call_id"] = msg["tool_call_id"]
+                    
+                    # Preserve name if present (for tool messages)
+                    if msg.get("name"):
+                        formatted_msg["name"] = msg["name"]
+                    
+                    formatted_messages.append(formatted_msg)
+                # ========================================================================
+                # DEBUG CODE - Temporary for debugging
+                # ========================================================================
+                print("\n" + "="*60)
+                print(f"DEBUG: Messages to LLM (Step {step + 1})")
+                print("="*60)
+                for i, msg in enumerate(llm_messages):
+                    print(f"\n{i}. Role: {msg.get('role')}")
+                    if msg.get('content'):
+                        content_preview = msg['content'][:60] + "..." if len(msg['content']) > 60 else msg['content']
+                        print(f"   Content: {content_preview}")
+                    if msg.get('tool_calls'):
+                        print(f"   Tool Calls: {len(msg['tool_calls'])}")
+                        for tc in msg['tool_calls']:
+                            tc_type = tc.get('type', 'NO TYPE')
+                            tc_id = tc.get('id', 'NO ID')
+                            tc_name = tc.get('function', {}).get('name', 'NO NAME')
+                            print(f"     - ID: {tc_id}")
+                            print(f"       Type: {tc_type}")
+                            print(f"       Name: {tc_name}")
+                    if msg.get('tool_call_id'):
+                        print(f"   Tool Call ID: {msg['tool_call_id']}")
+                        print(f"   Tool Name: {msg.get('name', 'NO NAME')}")
+                print("="*60 + "\n")
+                # ========================================================================
+                # END DEBUG CODE
+                # ========================================================================
                 # Get LLM response (with tools)
                 response = asyncio.run(
                     self._llm_manager.complete(
@@ -605,28 +648,39 @@ class Agent:
                     )
                 )
                 
-                # Check if response has tool calls
                 if self._has_tool_calls(response):
                     # Extract tool calls
                     tool_calls = self._extract_tool_calls(response)
                     logger.info(f"LLM requested {len(tool_calls)} tool calls")
                     
-                    # Add assistant message with tool calls to history
-                    # (LLM needs to see its own tool call request)
+                    # ✅ FIX: Format tool_calls in proper OpenAI structure
+                    formatted_tool_calls = []
+                    for tool_call in tool_calls:
+                        formatted_tool_calls.append({
+                            "id": tool_call['id'],
+                            "type": "function",
+                            "function": {
+                                "name": tool_call['name'],
+                                "arguments": tool_call['arguments']
+                            }
+                        })
+                    
+                    # Add assistant message with properly formatted tool_calls
                     llm_messages.append({
                         "role": "assistant",
                         "content": response.content or "",
-                        "tool_calls": tool_calls  # Store for conversation context
+                        "tool_calls": formatted_tool_calls  # Now in correct format
                     })
                     
-                    # Execute tools
+                    logger.debug(f"Added assistant message with {len(formatted_tool_calls)} tool calls")
+                    
+                    # Execute tools and add results
                     tool_results = self._execute_tool_calls(tool_calls)
                     
-                    # Add tool results to messages
                     for tool_result in tool_results:
                         llm_messages.append(tool_result)
                     
-                    # Continue loop - LLM will see tool results and respond
+                    # Continue loop
                     continue
                 
                 else:
