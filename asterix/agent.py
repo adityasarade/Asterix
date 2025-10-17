@@ -611,33 +611,7 @@ class Agent:
                         formatted_msg["name"] = msg["name"]
                     
                     formatted_messages.append(formatted_msg)
-                # ========================================================================
-                # DEBUG CODE - Temporary for debugging
-                # ========================================================================
-                print("\n" + "="*60)
-                print(f"DEBUG: Messages to LLM (Step {step + 1})")
-                print("="*60)
-                for i, msg in enumerate(llm_messages):
-                    print(f"\n{i}. Role: {msg.get('role')}")
-                    if msg.get('content'):
-                        content_preview = msg['content'][:60] + "..." if len(msg['content']) > 60 else msg['content']
-                        print(f"   Content: {content_preview}")
-                    if msg.get('tool_calls'):
-                        print(f"   Tool Calls: {len(msg['tool_calls'])}")
-                        for tc in msg['tool_calls']:
-                            tc_type = tc.get('type', 'NO TYPE')
-                            tc_id = tc.get('id', 'NO ID')
-                            tc_name = tc.get('function', {}).get('name', 'NO NAME')
-                            print(f"     - ID: {tc_id}")
-                            print(f"       Type: {tc_type}")
-                            print(f"       Name: {tc_name}")
-                    if msg.get('tool_call_id'):
-                        print(f"   Tool Call ID: {msg['tool_call_id']}")
-                        print(f"   Tool Name: {msg.get('name', 'NO NAME')}")
-                print("="*60 + "\n")
-                # ========================================================================
-                # END DEBUG CODE
-                # ========================================================================
+                
                 # Get LLM response (with tools)
                 response = asyncio.run(
                     self._llm_manager.complete(
