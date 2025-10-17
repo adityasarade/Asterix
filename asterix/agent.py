@@ -618,7 +618,8 @@ class Agent:
                         messages=formatted_messages,
                         temperature=self.config.temperature,
                         max_tokens=self.config.max_tokens,
-                        tools=tool_schemas if tool_schemas else None
+                        tools=tool_schemas if tool_schemas else None,
+                        provider=self.config.llm.provider
                     )
                 )
                 
