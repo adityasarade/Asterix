@@ -755,16 +755,20 @@ class Agent:
             >>> stats = agent.get_conversation_stats()
             >>> print(f"Total turns: {stats['total_messages']}")
         """
+        user_msgs = sum(1 for msg in self.conversation_history if msg.get("role") == "user")
+        assistant_msgs = sum(1 for msg in self.conversation_history if msg.get("role") == "assistant")
+        tool_msgs = sum(1 for msg in self.conversation_history if msg.get("role") == "tool")
+        
         stats = {
-            "total_messages": len(self.conversation_history),
-            "user_messages": sum(1 for msg in self.conversation_history if msg.get("role") == "user"),
-            "assistant_messages": sum(1 for msg in self.conversation_history if msg.get("role") == "assistant"),
-            "tool_messages": sum(1 for msg in self.conversation_history if msg.get("role") == "tool"),
+            "message_count": len(self.conversation_history),  # ✅ FIXED
+            "turn_count": (user_msgs + assistant_msgs) // 2,  # ✅ ADDED
+            "user_messages": user_msgs,
+            "assistant_messages": assistant_msgs,
+            "tool_messages": tool_msgs,
         }
         
-        # Calculate estimated token count (rough estimate: 4 chars per token)
         total_chars = sum(len(msg.get("content", "")) for msg in self.conversation_history)
-        stats["estimated_tokens"] = total_chars // 4
+        stats["total_tokens"] = total_chars // 4  # ✅ FIXED
         
         return stats
     

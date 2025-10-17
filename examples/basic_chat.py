@@ -35,7 +35,7 @@ def main():
                 description="User preferences and information"
             )
         },
-        model="openai/gpt-5-mini"
+        model="openai/gpt-4o-mini"
     )
     print(f"✓ Agent '{agent.id}' created")
     

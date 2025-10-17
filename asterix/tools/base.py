@@ -719,7 +719,13 @@ class ToolRegistry:
         Returns:
             List of tool schemas for LLM function calling
         """
-        return [tool.schema for tool in self._tools.values()]
+        return [
+        {
+            "type": "function",
+            "function": tool.schema
+        }
+        for tool in self._tools.values()
+    ]
     
     def execute_tool(self, tool_name: str, **kwargs) -> ToolResult:
         """

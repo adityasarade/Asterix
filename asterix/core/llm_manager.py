@@ -234,14 +234,29 @@ class LLMProviderManager:
                 for msg in messages
             ]
             
-            # Make API call
+            # Get model name
+            model_name = "gpt-5-mini"
+
+            # Build base API parameters
             api_params = {
-                "model": "gpt-5-mini",
+                "model": model_name,
                 "messages": openai_messages,
-                "temperature": temperature or 0.1,
-                "max_tokens": max_tokens or 1000,
                 "stream": False
             }
+
+            # Don't send temperature for models that don't support it
+            models_without_temperature = ["gpt-5-mini", "o1-preview", "o1-mini"]
+
+            if not any(model_str in model_name for model_str in models_without_temperature):
+                api_params["temperature"] = temperature or 0.1
+
+            # Use max_completion_tokens for newer models
+            newer_models = ["gpt-4o", "o1-preview", "o1-mini", "gpt-5-mini"]
+
+            if any(model_str in model_name for model_str in newer_models):
+                api_params["max_completion_tokens"] = max_tokens or 1000
+            else:
+                api_params["max_tokens"] = max_tokens or 1000
             
             # Add tools if provided
             if tools:
