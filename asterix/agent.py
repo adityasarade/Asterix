@@ -612,14 +612,16 @@ class Agent:
                     
                     formatted_messages.append(formatted_msg)
                 
-                # Get LLM response (with tools)
+                # Call LLM with tools
+                # Note: OpenAI supports tool_choice parameter to encourage/require tool usage
                 response = asyncio.run(
                     self._llm_manager.complete(
                         messages=formatted_messages,
-                        temperature=self.config.temperature,
-                        max_tokens=self.config.max_tokens,
+                        temperature=self.config.llm.temperature,
+                        max_tokens=self.config.llm.max_tokens,
                         tools=tool_schemas if tool_schemas else None,
-                        provider=self.config.llm.provider
+                        provider=self.config.llm.provider,
+                        tool_choice="auto"  # Can be "auto", "required", or {"type": "function", "function": {"name": "tool_name"}}
                     )
                 )
                 
@@ -721,7 +723,7 @@ class Agent:
     
     def _build_system_prompt(self) -> str:
         """
-        Build the system prompt including memory blocks.
+        Build the system prompt including memory blocks and tool usage instructions.
         
         Format:
         - Agent instructions
@@ -732,7 +734,7 @@ class Agent:
             System prompt string
         """
         lines = [
-            "You are a helpful AI assistant with persistent memory.",
+            "You are a helpful AI assistant with persistent memory and access to tools.",
             "",
             "# Memory Blocks",
             "You have access to the following memory blocks that you can read and modify:",
@@ -748,6 +750,23 @@ class Agent:
             lines.append(block.content if block.content else "(empty)")
             lines.append(f"```")
             lines.append("")
+        
+        # Add tool usage instructions
+        lines.extend([
+            "# Tool Usage Guidelines",
+            "",
+            "You have access to function calling tools. When a tool is relevant to the user's request:",
+            "- **YOU MUST call the tool using function calling** - do not just describe what it would return",
+            "- **Actually invoke the function** - don't say 'I used the tool' without calling it",
+            "- Use tools for:",
+            "  • Updating your memory (core_memory_append, core_memory_replace)",
+            "  • Storing important information long-term (archival_memory_insert)",
+            "  • Retrieving past information (archival_memory_search, conversation_search)",
+            "  • Any custom tools that match the user's request",
+            "",
+            "If the user explicitly asks you to use a specific tool, you MUST call it.",
+            ""
+        ])
         
         return "\n".join(lines)
     
@@ -789,15 +808,15 @@ class Agent:
         tool_msgs = sum(1 for msg in self.conversation_history if msg.get("role") == "tool")
         
         stats = {
-            "message_count": len(self.conversation_history),  # ✅ FIXED
-            "turn_count": (user_msgs + assistant_msgs) // 2,  # ✅ ADDED
+            "message_count": len(self.conversation_history),  
+            "turn_count": (user_msgs + assistant_msgs) // 2,  
             "user_messages": user_msgs,
             "assistant_messages": assistant_msgs,
             "tool_messages": tool_msgs,
         }
         
         total_chars = sum(len(msg.get("content", "")) for msg in self.conversation_history)
-        stats["total_tokens"] = total_chars // 4  # ✅ FIXED
+        stats["total_tokens"] = total_chars // 4  
         
         return stats
     
@@ -1261,11 +1280,16 @@ class Agent:
         """
         import json
         
+        print(f"\n🔧 Executing {len(tool_calls)} tool call(s)...")  # ADD THIS
+        
         results = []
         
         for tool_call in tool_calls:
             tool_id = tool_call['id']
             tool_name = tool_call['name']
+            
+            print(f"   ⚙️  Calling: {tool_name}")  # ADD THIS
+            print(f"   📝 Arguments: {tool_call['arguments']}")  # ADD THIS
             
             try:
                 # Parse arguments
@@ -1275,6 +1299,8 @@ class Agent:
                 
                 # Execute tool via registry
                 tool_result = self._tool_registry.execute_tool(tool_name, **arguments)
+                
+                print(f"   ✅ Result: {str(tool_result)[:100]}")  # ADD THIS
                 
                 # Format result for LLM
                 results.append({
@@ -1287,6 +1313,7 @@ class Agent:
                 logger.info(f"Tool {tool_name} result: {str(tool_result)[:100]}")
                 
             except json.JSONDecodeError as e:
+                print(f"   ❌ JSON Error: {e}")  # ADD THIS
                 logger.error(f"Failed to parse tool arguments for {tool_name}: {e}")
                 results.append({
                     'tool_call_id': tool_id,
@@ -1296,6 +1323,7 @@ class Agent:
                 })
             
             except Exception as e:
+                print(f"   ❌ Execution Error: {e}")  # ADD THIS
                 logger.error(f"Tool execution error ({tool_name}): {e}")
                 results.append({
                     'tool_call_id': tool_id,
@@ -1304,6 +1332,7 @@ class Agent:
                     'content': f"Error: {str(e)}"
                 })
         
+        print()
         return results
     
     # ========================================================================

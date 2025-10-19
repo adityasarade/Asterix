@@ -197,11 +197,15 @@ def main():
     print("\n3. Testing tools in conversation...")
     print("=" * 70)
     
+    # Give initial instruction
+    print("\n   Instructing agent to use tools...")
+    agent.chat("You have custom tools available. Always use them when relevant instead of answering directly.")
+    
     test_queries = [
-        "What time is it right now?",
-        "Calculate 25 multiplied by 4",
-        "Analyze this list of numbers: [10, 25, 30, 15, 40, 20]",
-        "List the files in the current directory"
+    "Use the get_current_time tool to tell me what time it is right now",
+    "Use the calculate tool to multiply 25 by 4",
+    "Use the analyze_list tool to analyze these numbers: [10, 25, 30, 15, 40, 20]",
+    "Use the list_directory tool to list files in the current directory"
     ]
     
     for query in test_queries:
@@ -225,7 +229,6 @@ def main():
     stats = agent.get_conversation_stats()
     print(f"   • Messages: {stats['message_count']}")
     print(f"   • Turns: {stats['turn_count']}")
-    print(f"   • Tool calls: {sum(1 for msg in agent.conversation_history if msg.get('role') == 'tool')}")
     
     print("\n" + "=" * 70)
     print("✅ Custom tools example complete!")

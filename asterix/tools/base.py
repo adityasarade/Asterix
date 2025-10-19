@@ -716,16 +716,26 @@ class ToolRegistry:
         """
         Get OpenAI function schemas for all registered tools.
         
+        Handles both wrapped and unwrapped schema formats for compatibility.
+        
         Returns:
             List of tool schemas for LLM function calling
         """
-        return [
-        {
-            "type": "function",
-            "function": tool.schema
-        }
-        for tool in self._tools.values()
-    ]
+        schemas = []
+        
+        for tool in self._tools.values():
+            # Check if schema is already in OpenAI format with wrapper
+            if isinstance(tool.schema, dict) and 'type' in tool.schema and tool.schema.get('type') == 'function':
+                # Already wrapped - use as-is
+                schemas.append(tool.schema)
+            else:
+                # Unwrapped - wrap it
+                schemas.append({
+                    "type": "function",
+                    "function": tool.schema
+                })
+        
+        return schemas
     
     def execute_tool(self, tool_name: str, **kwargs) -> ToolResult:
         """

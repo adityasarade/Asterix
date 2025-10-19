@@ -21,7 +21,7 @@ import httpx
 from groq import Groq
 
 from .config import get_config_manager
-# from ..utils.tokens import count_tokens
+from ..utils.tokens import count_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,8 @@ class LLMProviderManager:
     async def _call_groq(self, messages: List[LLMMessage], 
                         temperature: Optional[float] = None,
                         max_tokens: Optional[int] = None,
-                        tools: Optional[List[Dict[str, Any]]] = None) -> LLMResponse:
+                        tools: Optional[List[Dict[str, Any]]] = None,
+                        tool_choice: Optional[Union[str, Dict]] = None) -> LLMResponse:
         """
         Call Groq API for completion.
         
@@ -169,7 +170,11 @@ class LLMProviderManager:
             # Add tools if provided
             if tools:
                 api_params["tools"] = tools
-                api_params["tool_choice"] = "auto"
+                # Use provided tool_choice or default to "auto"
+                if tool_choice:
+                    api_params["tool_choice"] = tool_choice
+                else:
+                    api_params["tool_choice"] = "auto"
             
             response = self._groq_client.chat.completions.create(**api_params)
             
@@ -217,7 +222,8 @@ class LLMProviderManager:
     async def _call_openai(self, messages: List[LLMMessage],
                           temperature: Optional[float] = None,
                           max_tokens: Optional[int] = None,
-                          tools: Optional[List[Dict[str, Any]]] = None) -> LLMResponse:
+                          tools: Optional[List[Dict[str, Any]]] = None,
+                          tool_choice: Optional[Union[str, Dict]] = None) -> LLMResponse:
         """
         Call OpenAI API for completion.
         
@@ -275,7 +281,11 @@ class LLMProviderManager:
             # Add tools if provided
             if tools:
                 api_params["tools"] = tools
-                api_params["tool_choice"] = "auto"
+                # Use provided tool_choice or default to "auto"
+                if tool_choice:
+                    api_params["tool_choice"] = tool_choice
+                else:
+                    api_params["tool_choice"] = "auto"
             
             response = self._openai_client.chat.completions.create(**api_params)
             
@@ -330,12 +340,13 @@ class LLMProviderManager:
             logger.error(f"OpenAI API error: {e}")
             raise LLMError(f"OpenAI error: {e}")
     
-    async def complete(self, messages: Union[str, List[LLMMessage]],
-                      provider: Optional[str] = None,
-                      temperature: Optional[float] = None,
-                      max_tokens: Optional[int] = None,
-                      tools: Optional[List[Dict[str, Any]]] = None,
-                      retry_on_failure: bool = True) -> LLMResponse:
+    async def complete(self, messages: Union[str, List[LLMMessage]], 
+                   provider: Optional[str] = None,
+                   temperature: Optional[float] = None,
+                   max_tokens: Optional[int] = None,
+                   tools: Optional[List[Dict[str, Any]]] = None,
+                   tool_choice: Optional[Union[str, Dict]] = None,
+                   retry_on_failure: bool = True) -> LLMResponse:
         """
         Generate completion using the best available provider.
         
@@ -368,9 +379,9 @@ class LLMProviderManager:
         try:
             # Call the appropriate provider
             if selected_provider == "groq":
-                return await self._call_groq(messages, temperature, max_tokens, tools)
+                return await self._call_groq(messages, temperature, max_tokens, tools, tool_choice)
             elif selected_provider == "openai":
-                return await self._call_openai(messages, temperature, max_tokens, tools)
+                return await self._call_openai(messages, temperature, max_tokens, tools, tool_choice)
             else:
                 raise LLMError(f"Unknown provider: {selected_provider}")
                 
