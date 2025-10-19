@@ -1,0 +1,48 @@
+# Sample Agent Configuration File
+# This demonstrates how to configure an Asterix agent using YAML
+
+# Agent identification
+agent_id: "yaml_configured_agent"
+
+# LLM configuration
+model: "openai/gpt-4o-mini"
+temperature: 0.1
+max_tokens: 1000
+
+# Heartbeat configuration
+max_heartbeat_steps: 10
+
+# Memory block definitions
+blocks:
+  persona:
+    size: 1000
+    priority: 10
+    description: "Agent personality and behavior guidelines"
+    initial_value: |
+      I am a helpful AI assistant configured via YAML.
+      I adapt to user preferences and maintain context across conversations.
+  
+  user_preferences:
+    size: 800
+    priority: 5
+    description: "User preferences and information"
+    initial_value: "User preference data will be stored here."
+  
+  current_task:
+    size: 1500
+    priority: 2
+    description: "Current task and working context"
+    initial_value: ""
+
+# Qdrant configuration (using environment variables)
+qdrant_url: "${QDRANT_URL}"
+qdrant_api_key: "${QDRANT_API_KEY}"
+qdrant_collection: "yaml_agent_memory"
+
+# State persistence
+state_dir: "./agent_states"
+
+# Optional: Custom system prompt additions
+system_prompt_suffix: |
+  You are configured via YAML and should demonstrate flexibility.
+  Always be clear, concise, and helpful.

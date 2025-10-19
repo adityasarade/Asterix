@@ -1918,4 +1918,25 @@ class Agent:
                 f"These tools are NOT automatically restored - you must re-register them!"
             )
         
-        return agent
+        return 
+    
+    def get_tool_call_count(self) -> int:
+        """
+        Get the number of tool calls executed in this session.
+        
+        Returns:
+            Number of tool calls made
+        """
+        # Tool results are stored in conversation_history with role 'tool'
+        # But they might not be visible there, so we count from the full message list
+        try:
+            # Try different possible attribute names
+            if hasattr(self, 'messages'):
+                return sum(1 for msg in self.messages if msg.get('role') == 'tool')
+            elif hasattr(self, '_messages'):
+                return sum(1 for msg in self._messages if msg.get('role') == 'tool')
+            else:
+                # Fallback: count from conversation_history (might be 0)
+                return sum(1 for msg in self.conversation_history if msg.get('role') == 'tool')
+        except Exception:
+            return 0
