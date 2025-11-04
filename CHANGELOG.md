@@ -5,6 +5,24 @@ All notable changes to the Asterix Agent Library will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2025-11-04
+
+### 📦 Maintenance Release
+
+**Changes:**
+- Updated package metadata for stable release
+- Added MANIFEST.in for proper file distribution
+- Enhanced PyPI classifiers (Development Status: Beta)
+- Added comprehensive publishing documentation
+- Improved package structure documentation
+
+**Technical:**
+- All files properly included in distribution
+- Examples and tests included in package
+- Documentation improvements
+
+---
+
 ## [0.1.0] - 2025-11-04
 
 ### 🎉 Initial Stable Release
@@ -107,7 +125,7 @@ pip install asterix-agent
 
 ---
 
-## [0.1.0a1] - 2025-01-15
+## [0.1.0a1] - 2025-10-15
 
 ### 🚧 Alpha Release
 
