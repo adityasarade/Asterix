@@ -14,7 +14,7 @@ authors = [
 requires-python = ">=3.10"
 keywords = ["ai", "agents", "memory", "llm", "qdrant", "stateful"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -23,6 +23,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Operating System :: OS Independent",
+    "Natural Language :: English",
+    "Framework :: Pydantic",
+    "Typing :: Typed",
 ]
 
 dependencies = [
