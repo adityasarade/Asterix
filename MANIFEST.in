@@ -1,0 +1,38 @@
+# Include documentation
+include README.md
+include CHANGELOG.md
+include LICENSE
+
+# Include configuration files
+include pyproject.toml
+include .env.example
+
+# Include example scripts
+recursive-include examples *.py
+recursive-include examples *.yaml
+recursive-include examples *.yml
+
+# Include tests
+recursive-include tests *.py
+
+# Include package data
+recursive-include asterix *.py
+recursive-include asterix *.yaml
+recursive-include asterix *.yml
+
+# Exclude unnecessary files
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *$py.class
+global-exclude *.so
+global-exclude .DS_Store
+global-exclude .git*
+global-exclude .venv
+global-exclude venv
+global-exclude .pytest_cache
+global-exclude .coverage
+global-exclude htmlcov
+global-exclude dist
+global-exclude build
+global-exclude *.egg-info
+global-exclude .env
