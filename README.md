@@ -2,9 +2,7 @@
 
 **Stateful AI agents with editable memory blocks and persistent storage.**
 
-> **⚠️ EARLY DEVELOPMENT - NOT READY FOR PRODUCTION YET**
-> 
-> This library is under active development.
+> **Note:** This library is in active development. Core features are stable, but some APIs may change in future releases.
 
 Asterix is a lightweight Python library for building AI agents that can remember, learn, and persist their state across sessions. No servers required - just `pip install` and start building.
 
