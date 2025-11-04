@@ -635,7 +635,7 @@ pytest tests/test_agent.py::test_memory_tools
 
 ## 📊 Project Status
 
-**Current Version:** 0.1.0 (Alpha)
+**Current Version:** 0.1.2 (Alpha)
 
 **Roadmap:**
 - [x] Core agent implementation
