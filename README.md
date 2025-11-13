@@ -2,7 +2,8 @@
 
 **Stateful AI agents with editable memory blocks and persistent storage.**
 
-> **Note:** This library is in active development. Core features are stable, but some APIs may change in future releases.
+> **Note:** Asterix is in Beta (v0.1.2). Core features are stable and production-ready. 
+> Enhanced features and optimizations are in active development.
 
 Asterix is a lightweight Python library for building AI agents that can remember, learn, and persist their state across sessions. No servers required - just `pip install` and start building.
 
@@ -77,7 +78,7 @@ response = agent.chat("Read config.yaml and summarize the settings")
 
 Tools can define validation constraints for their parameters:
 ```python
-from asterix.tools import tool, ParameterConstraint
+from asterix.tools.base import Tool, ParameterConstraint
 
 @agent.tool(
     name="create_user",
@@ -102,7 +103,7 @@ def create_user(username: str, age: int) -> str:
 
 Organize tools by category for better discovery:
 ```python
-from asterix.tools import ToolCategory
+from asterix.tools.base import ToolCategory
 
 # Tools are automatically categorized
 memory_tools = agent._tool_registry.get_by_category(ToolCategory.MEMORY)
@@ -117,7 +118,7 @@ print(categories)  # {"memory": 5, "file_operations": 3, "custom": 2}
 
 Enable automatic retries for transient failures:
 ```python
-from asterix.tools import Tool
+from asterix.tools.base import Tool
 
 @agent.tool(
     name="fetch_data",
@@ -310,7 +311,7 @@ agent = Agent.from_yaml("agent_config.yaml")
 
 Configure tool behavior when registering:
 ```python
-from asterix.tools import Tool, ToolCategory, ParameterConstraint
+from asterix.tools.base import Tool, ToolCategory, ParameterConstraint
 
 @agent.tool(
     name="advanced_tool",
@@ -406,7 +407,7 @@ response = agent.chat("List all Python files in the current directory")
 
 Creating custom tools with full features:
 ```python
-from asterix.tools import Tool, ToolCategory, ParameterConstraint
+from asterix.tools.base import Tool, ToolCategory, ParameterConstraint
 
 class MyCustomTool(Tool):
     def __init__(self):
@@ -458,11 +459,17 @@ agent = Agent(..., state_backend="json")
 agent = Agent(..., state_backend="sqlite", state_db="agents.db")
 
 # Custom backend
-from asterix.storage import StateBackend
+from asterix.storage import SQLiteStateBackend
 
-class RedisBackend(StateBackend):
-    def save(self, agent_id: str, state: dict): ...
-    def load(self, agent_id: str) -> dict: ...
+# Example structure for custom backend:
+class RedisBackend:
+    def save_state(self, agent_id: str, state: dict) -> None:
+        """Save agent state"""
+        pass
+    
+    def load_state(self, agent_id: str) -> dict:
+        """Load agent state"""
+        pass
 
 agent = Agent(..., state_backend=RedisBackend())
 ```
@@ -473,7 +480,7 @@ Asterix provides detailed error messages with context and suggestions:
 
 ### Tool Errors
 ```python
-from asterix.tools import ToolNotFoundError, ToolExecutionError, ToolValidationError
+from asterix.tools.base import ToolNotFoundError, ToolExecutionError, ToolValidationError
 
 try:
     # Typo in tool name
@@ -518,11 +525,12 @@ except Exception as e:
 
 For complete working examples, see the [`examples/`](examples/) directory:
 
-- [`basic_agent.py`](examples/basic_agent.py) - Simple conversation agent
+- [`basic_chat.py`](examples/basic_chat.py) - Simple conversation agent
 - [`custom_tools.py`](examples/custom_tools.py) - Tool registration with validation
 - [`persistent_agent.py`](examples/persistent_agent.py) - State save/load demonstration
 - [`tool_documentation.py`](examples/tool_documentation.py) - Auto-documentation generation
 - [`cli_agent.py`](examples/cli_agent.py) - Full-featured CLI agent with file operations
+- [`yaml_config.py`](examples/yaml_config.py) - YAML configuration example
 
 ### CLI Agent with File Operations
 
@@ -590,27 +598,16 @@ print(memory["task"])
 # Update memory manually
 agent.update_memory("task", "New content")
 
-# Search archival memory
-results = agent.search_archival("user preferences", k=5)
-for result in results:
-    print(f"Score: {result.score}, Text: {result.summary}")
-```
+# Archival memory search is handled automatically by the agent
+# when it needs to retrieve information. The agent will use the
+# archival_memory_search tool internally when needed.
 
-### Heartbeat Control (Advanced)
-
-```python
-# Manual heartbeat loop control
-controller = agent.create_heartbeat_controller()
-
-for step in controller.run("Complex multi-step task"):
-    if step.needs_tool_execution:
-        # Custom tool execution logic
-        results = my_custom_executor(step.tool_calls)
-        controller.submit_tool_results(results)
-    
-    elif step.is_complete:
-        response = step.get_response()
-        break
+# To manually search, you can access the tool:
+tool_result = agent._tool_registry.execute_tool(
+    "archival_memory_search",
+    query="user preferences",
+    k=5
+)
 ```
 
 ---
@@ -635,17 +632,20 @@ pytest tests/test_agent.py::test_memory_tools
 
 ## 📊 Project Status
 
-**Current Version:** 0.1.2 (Alpha)
+**Current Version:** 0.1.2 (Beta)
 
 **Roadmap:**
 - [x] Core agent implementation
 - [x] Memory tools system
 - [x] State persistence
 - [x] Qdrant integration
-- [ ] Enhanced tool registration
+- [x] Enhanced tool registration (parameter validation, categories, retry logic)
+- [x] Auto-documentation system
 - [ ] Performance optimizations
-- [ ] Extended documentation
-- [ ] Tutorial series
+- [ ] Advanced monitoring and observability
+- [ ] Streaming responses
+- [ ] Multi-agent collaboration
+- [ ] Custom memory backends (Redis, PostgreSQL)
 
 ## 📚 Tool Reference
 
