@@ -2,7 +2,7 @@
 
 **Stateful AI agents with editable memory blocks and persistent storage.**
 
-> **Note:** Asterix is in Beta (v0.1.2). Core features are stable and production-ready. 
+> **Note:** Asterix is in Beta (v0.1.3). Core features are stable and production-ready. 
 > Enhanced features and optimizations are in active development.
 
 Asterix is a lightweight Python library for building AI agents that can remember, learn, and persist their state across sessions. No servers required - just `pip install` and start building.
@@ -632,7 +632,7 @@ pytest tests/test_agent.py::test_memory_tools
 
 ## 📊 Project Status
 
-**Current Version:** 0.1.2 (Beta)
+**Current Version:** 0.1.3 (Beta)
 
 **Roadmap:**
 - [x] Core agent implementation
