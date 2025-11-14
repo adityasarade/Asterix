@@ -2,7 +2,7 @@
 
 **Stateful AI agents with editable memory blocks and persistent storage.**
 
-> **Note:** Asterix is in Beta (v0.1.3). Core features are stable and production-ready. 
+> **Note:** Asterix is in Beta (v0.1.4). Core features are stable and production-ready. 
 > Enhanced features and optimizations are in active development.
 
 Asterix is a lightweight Python library for building AI agents that can remember, learn, and persist their state across sessions. No servers required - just `pip install` and start building.
@@ -435,43 +435,125 @@ agent.register_tool(MyCustomTool())
 
 ## 💾 State Persistence
 
-### Save & Load
+Asterix supports persistent agent state across sessions using two built-in backends: **JSON** (default, simple) and **SQLite** (better for multiple agents).
+
+### JSON Backend (Default)
+
+Perfect for single agents, prototyping, and human-readable storage:
 
 ```python
-# Save agent state to disk
-agent.save_state()  # Saves to ./agent_states/{agent_id}.json
+from asterix import Agent, BlockConfig
 
-# Load from disk
-agent = Agent.load_state("agent_id")
+# Create agent (JSON backend is default)
+agent = Agent(
+    agent_id="my_assistant",
+    blocks={
+        "user_prefs": BlockConfig(size=800, priority=5),
+        "notes": BlockConfig(size=1200, priority=3)
+    },
+    model="openai/gpt-4o-mini"
+)
 
-# Custom state directory
-agent = Agent(..., state_dir="./my_agents")
+# Chat with agent
+agent.chat("Hi! I prefer Python over JavaScript.")
+
+# Save state to ./agent_states/my_assistant.json
 agent.save_state()
+
+# Later session - load previous state
+agent = Agent.load_state("my_assistant")
+agent.chat("What language do I prefer?")  # Remembers everything!
 ```
 
-### State Backends
+### SQLite Backend
+Better for production, multiple agents, and querying capabilities:
+ 
+```python
+from asterix import Agent, BlockConfig, StorageConfig
+
+# Create agent with SQLite backend
+agent = Agent(
+    agent_id="production_agent",
+    blocks={"task": BlockConfig(size=2000, priority=1)},
+    model="openai/gpt-4o-mini",
+    storage=StorageConfig(
+        state_backend="sqlite",
+        state_db="./agent_states/agents.db"
+    )
+)
+
+# Save to SQLite database
+agent.save_state()
+
+# Load from SQLite
+agent = Agent.load_state(
+    "production_agent",
+    state_backend="sqlite",
+    state_db="./agent_states/agents.db"
+)
+```
+
+### SQLite Advanced Features
+Query agent metadata without loading full state:
 
 ```python
-# JSON (default)
-agent = Agent(..., state_backend="json")
-
-# SQLite (better for many agents)
-agent = Agent(..., state_backend="sqlite", state_db="agents.db")
-
-# Custom backend
 from asterix.storage import SQLiteStateBackend
 
-# Example structure for custom backend:
+backend = SQLiteStateBackend("./agent_states/agents.db")
+
+# List all agents
+agents = backend.list_agents()
+print(agents)  # ['agent1', 'agent2', 'agent3']
+ 
+# Get agent metadata
+info = backend.get_agent_info("agent1")
+print(info)
+
+# {
+#   'agent_id': 'agent1',
+#   'model': 'openai/gpt-4o-mini',
+#   'block_count': 3,
+#   'message_count': 42,
+#   'created_at': '2025-01-15T10:30:00',
+#   'last_updated': '2025-01-15T14:25:00'
+# }
+
+# List all agents with metadata
+
+all_agents = backend.list_all_info(limit=10)
+```
+
+### Choosing a Backend
+
+| Feature | JSON | SQLite |
+|---------|------|--------|
+| **Best for** | 1-10 agents, prototyping | 10+ agents, production |
+| **Performance** | Fast for single agent | Fast for many agents |
+| **Querying** | ❌ | ✅ |
+| **Human-readable** | ✅ | ❌ |
+| **Atomic updates** | ❌ | ✅ |
+| **File structure** | One file per agent | Single database file |
+
+### Custom Backend
+
+Implement your own storage backend:
+
+```python
 class RedisBackend:
-    def save_state(self, agent_id: str, state: dict) -> None:
+    def save(self, agent_id: str, state_dict: dict) -> None:
         """Save agent state"""
         pass
-    
-    def load_state(self, agent_id: str) -> dict:
+
+    def load(self, agent_id: str) -> dict:
         """Load agent state"""
         pass
 
-agent = Agent(..., state_backend=RedisBackend())
+    def exists(self, agent_id: str) -> bool:
+        """Check if agent exists"""
+        pass
+
+# Use custom backend
+agent = Agent(..., storage=StorageConfig(state_backend=RedisBackend()))
 ```
 
 ## ⚠️ Error Handling
@@ -525,12 +607,33 @@ except Exception as e:
 
 For complete working examples, see the [`examples/`](examples/) directory:
 
-- [`basic_chat.py`](examples/basic_chat.py) - Simple conversation agent
-- [`custom_tools.py`](examples/custom_tools.py) - Tool registration with validation
-- [`persistent_agent.py`](examples/persistent_agent.py) - State save/load demonstration
-- [`tool_documentation.py`](examples/tool_documentation.py) - Auto-documentation generation
-- [`cli_agent.py`](examples/cli_agent.py) - Full-featured CLI agent with file operations
-- [`yaml_config.py`](examples/yaml_config.py) - YAML configuration example
+- **[`basic_chat.py`](examples/basic_chat.py)** - Simple conversation agent
+- **[`custom_tools.py`](examples/custom_tools.py)** - Tool registration with validation and constraints
+- **[`persistent_agent.py`](examples/persistent_agent.py)** - State persistence with JSON backend (default)
+- **[`persistent_agent_sqlite.py`](examples/persistent_agent_sqlite.py)** - State persistence with SQLite backend for production use
+- **[`tool_documentation.py`](examples/tool_documentation.py)** - Auto-documentation generation for tools
+- **[`cli_agent.py`](examples/cli_agent.py)** - Full-featured CLI agent with file operations
+- **[`yaml_config.py`](examples/yaml_config.py)** - YAML configuration example
+
+### Running the Examples
+
+```bash
+# Clone the repository
+git clone https://github.com/adityasarade/Asterix.git
+cd Asterix
+# Install in editable mode
+pip install -e .
+
+# Set up environment variables (create .env file)
+# OPENAI_API_KEY=your-key
+# QDRANT_URL=your-qdrant-url
+# QDRANT_API_KEY=your-qdrant-key
+
+# Run examples
+python examples/basic_chat.py
+python examples/persistent_agent.py
+python examples/persistent_agent_sqlite.py
+```
 
 ### CLI Agent with File Operations
 
@@ -632,7 +735,7 @@ pytest tests/test_agent.py::test_memory_tools
 
 ## 📊 Project Status
 
-**Current Version:** 0.1.3 (Beta)
+**Current Version:** 0.1.4 (Beta)
 
 **Roadmap:**
 - [x] Core agent implementation

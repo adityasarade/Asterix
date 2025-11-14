@@ -5,7 +5,7 @@ A lightweight Python library for building AI agents that can remember,
 learn, and persist their state across sessions.
 """
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 __author__ = "Aditya Sarade"
 
 from .agent import Agent, MemoryBlock
