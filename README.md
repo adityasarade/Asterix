@@ -12,20 +12,20 @@ Asterix is a lightweight Python library for building AI agents that can remember
 
 ---
 
-## ✨ Features
+## Features
 
-- **🧠 Editable Memory Blocks** - Agents can read and write their own memory via built-in tools
-- **💾 Persistent Storage** - State saves across sessions (JSON/SQLite backends)
-- **🔍 Semantic Search** - Qdrant Cloud integration for long-term memory retrieval
-- **🛠️ Enhanced Tool System** - Easy decorator pattern with parameter validation, retry logic, and categories
-- **📚 Auto-Documentation** - Tools automatically generate markdown/JSON documentation
-- **🚨 Smart Error Handling** - Helpful error messages with suggestions and context
-- **🔄 Multi-Model Support** - Works with Groq, OpenAI, and extensible to others
-- **📦 No Server Required** - Pure Python library, runs anywhere
+- **Editable Memory Blocks** - Agents can read and write their own memory via built-in tools
+- **Persistent Storage** - State saves across sessions (JSON/SQLite backends)
+- **Semantic Search** - Qdrant Cloud integration for long-term memory retrieval
+- **Enhanced Tool System** - Easy decorator pattern with parameter validation, retry logic, and categories
+- **Auto-Documentation** - Tools automatically generate markdown/JSON documentation
+- **Smart Error Handling** - Helpful error messages with suggestions and context
+- **Multi-Model Support** - Works with Groq, OpenAI, and extensible to others
+- **No Server Required** - Pure Python library, runs anywhere
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -72,7 +72,7 @@ def read_file(filepath: str) -> str:
 response = agent.chat("Read config.yaml and summarize the settings")
 ```
 
-## 🛠️ Advanced Tool Features
+## Advanced Tool Features
 
 ### Parameter Validation
 
@@ -200,7 +200,7 @@ agent = Agent.load_state("agent_id")
 agent.chat("What were we discussing?")  # Remembers everything!
 ```
 
-## 🔍 Logging
+## Logging
 
 Asterix uses Python's standard logging module. By default, logs are not displayed. To enable logging:
 
@@ -237,7 +237,7 @@ logging.getLogger('asterix.core').setLevel(logging.WARNING)
 
 ---
 
-## 📚 Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -333,7 +333,7 @@ def advanced_tool(query: str) -> str:
 
 ---
 
-## 🧠 Memory System
+## Memory System
 
 ### Built-in Memory Tools
 
@@ -376,7 +376,7 @@ When a block exceeds its token limit:
 
 ---
 
-## 🛠️ Custom Tools
+## Custom Tools
 
 Register custom tools using the decorator pattern:
 
@@ -433,7 +433,7 @@ agent.register_tool(MyCustomTool())
 
 ---
 
-## 💾 State Persistence
+## State Persistence
 
 Asterix supports persistent agent state across sessions using two built-in backends: **JSON** (default, simple) and **SQLite** (better for multiple agents).
 
@@ -556,7 +556,7 @@ class RedisBackend:
 agent = Agent(..., storage=StorageConfig(state_backend=RedisBackend()))
 ```
 
-## ⚠️ Error Handling
+## Error Handling
 
 Asterix provides detailed error messages with context and suggestions:
 
@@ -603,7 +603,7 @@ except Exception as e:
 
 ---
 
-## 📖 Examples
+## Examples
 
 For complete working examples, see the [`examples/`](examples/) directory:
 
@@ -689,7 +689,7 @@ summary = main_agent.chat(f"Summarize: {review}")
 
 ---
 
-## 🔧 Advanced Usage
+## Advanced Usage
 
 ### Direct Memory Access
 
@@ -733,7 +733,7 @@ pytest tests/test_agent.py::test_memory_tools
 
 ---
 
-## 📊 Project Status
+## Project Status
 
 **Current Version:** 0.1.4 (Beta)
 
@@ -750,7 +750,7 @@ pytest tests/test_agent.py::test_memory_tools
 - [ ] Multi-agent collaboration
 - [ ] Custom memory backends (Redis, PostgreSQL)
 
-## 📚 Tool Reference
+## Tool Reference
 
 ### Built-in Memory Tools
 
@@ -794,7 +794,7 @@ with open("tool_catalog.json", "w") as f:
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
@@ -806,13 +806,13 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Built with [Groq](https://groq.com/) and [OpenAI](https://openai.com/)
 - Vector storage by [Qdrant](https://qdrant.tech/)
@@ -820,7 +820,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 📞 Support
+## Support
 
 - **Issues:** [GitHub Issues](https://github.com/adityasarade/Asterix/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/adityasarade/Asterix/discussions)
