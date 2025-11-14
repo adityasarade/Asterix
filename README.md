@@ -187,7 +187,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Documentation:** [Full documentation](docs/) with guides and API reference
 - **Issues:** [GitHub Issues](https://github.com/adityasarade/Asterix/issues) - Report bugs or request features
-- **Discussions:** [GitHub Discussions](https://github.com/adityasarade/Asterix/discussions) - Ask questions and share ideas
 - **Examples:** [Examples directory](examples/) - Working code examples
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md) - Version history and updates
 
