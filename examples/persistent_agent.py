@@ -74,12 +74,12 @@ def session_1_save_agent():
     # Save state
     print("\n4. Saving agent state...")
     agent.save_state()
-    
+
     # Get save location
-    state_file = f"./agent_states/{agent.id}_state.json"
+    state_file = f"./agent_states/{agent.id}.json"
     file_exists = os.path.exists(state_file)
     file_size = os.path.getsize(state_file) if file_exists else 0
-    
+
     print(f"   ✓ State saved to: {state_file}")
     print(f"   ✓ File size: {file_size:,} bytes")
     
@@ -173,7 +173,7 @@ def main():
     print("  • State includes conversation history and memory blocks")
     print("  • Loaded agents remember everything from previous sessions")
     print("  • Perfect for long-running assistants and resumable workflows")
-    print("\nState file location: ./agent_states/persistent_demo_state.json")
+    print("\nState file location: ./agent_states/persistent_demo.json")
     print("=" * 70)
 
 
