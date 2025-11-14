@@ -3,7 +3,7 @@ uv.lock
 __pycache__/
 .env
 logs/
-docs/
+context_docs/
 asterix_agent.egg-info/
 dist/
 agent_states/
