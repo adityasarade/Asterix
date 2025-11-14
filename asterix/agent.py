@@ -1918,7 +1918,7 @@ class Agent:
                 f"These tools are NOT automatically restored - you must re-register them!"
             )
         
-        return 
+        return agent
     
     def get_tool_call_count(self) -> int:
         """
