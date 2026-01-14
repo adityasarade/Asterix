@@ -5,6 +5,21 @@ All notable changes to the Asterix Agent Library will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-01-14
+
+### Added
+- **Gemini Provider Support** - Added Google Gemini as a new LLM provider with full tool calling support
+- **Dynamic Model Configuration** - Models specified in config are now actually used instead of hardcoded defaults
+- **New Models** - Added support for Qwen3-32B, Kimi K2-Instruct, Gemini 2.5/3.0 Flash/Pro
+- **Gemini Health Check** - Added health monitoring for Gemini API
+
+### Changed
+- **Default Model** - Changed from `openai/gpt-5-mini` to `gemini/gemini-2.5-flash` (1M context window)
+- **Updated Context Limits** - Added accurate context limits for all supported models
+
+### Deprecated
+- Mixtral models are no longer available on Groq (deprecated March 2025)
+
 ## [0.1.4] - 2025-11-14
 
 - Fixed persistent agent example filename bug

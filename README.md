@@ -20,7 +20,7 @@ Asterix is a lightweight Python library for building AI agents that can remember
 - **Enhanced Tool System** - Easy decorator pattern with parameter validation, retry logic, and categories
 - **Auto-Documentation** - Tools automatically generate markdown/JSON documentation
 - **Smart Error Handling** - Helpful error messages with suggestions and context
-- **Multi-Model Support** - Works with Groq, OpenAI, and extensible to others
+- **Multi-Model Support** - Works with Gemini, Groq, OpenAI, and extensible to others
 - **No Server Required** - Pure Python library, runs anywhere
 
 ---
@@ -49,7 +49,7 @@ agent = Agent(
         "task": BlockConfig(size=1500, priority=1),
         "notes": BlockConfig(size=1000, priority=2)
     },
-    model="openai/gpt-4o-mini"
+    model="gemini/gemini-2.5-flash"  # Default model
 )
 
 # Chat with your agent
@@ -177,7 +177,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- Built with [Groq](https://groq.com/) and [OpenAI](https://openai.com/)
+- Built with [Gemini](https://ai.google.dev/), [Groq](https://groq.com/), and [OpenAI](https://openai.com/)
 - Vector storage by [Qdrant](https://qdrant.tech/)
 - Inspired by [Letta](https://www.letta.com/)
 

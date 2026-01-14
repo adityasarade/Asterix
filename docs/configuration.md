@@ -217,27 +217,39 @@ agent = Agent(
 
 Asterix supports multiple LLM providers:
 
-- **OpenAI** - GPT-4, GPT-4o, GPT-3.5, etc.
-- **Groq** - Fast inference with Llama, Mixtral, etc.
+- **Gemini** - Google's latest models with massive context windows (recommended)
+- **Groq** - Fast inference with Llama, Qwen, Kimi K2
+- **OpenAI** - GPT-4, GPT-4o, etc.
 
 ### Model Configuration
 
 ```python
-# OpenAI models
-agent = Agent(model="openai/gpt-4o-mini")
-agent = Agent(model="openai/gpt-4o")
-agent = Agent(model="openai/gpt-3.5-turbo")
+# Gemini models (recommended - default provider)
+agent = Agent(model="gemini/gemini-2.5-flash")  # Default, 1M context
+agent = Agent(model="gemini/gemini-2.5-pro")    # Most capable
+agent = Agent(model="gemini/gemini-3-pro")      # Latest, 1M context
+agent = Agent(model="gemini/gemini-3-flash")    # Fast, 200K context
 
-# Groq models
-agent = Agent(model="groq/llama-3.1-70b-versatile")
-agent = Agent(model="groq/mixtral-8x7b-32768")
+# Groq models (fast inference)
+agent = Agent(model="groq/llama-3.3-70b-versatile")
+agent = Agent(model="groq/qwen3-32b")           # 131K context
+agent = Agent(model="groq/kimi-k2-instruct")    # 262K context
+agent = Agent(model="groq/llama-3.1-8b-instant")
+
+# OpenAI models
+agent = Agent(model="openai/gpt-4o")
+agent = Agent(model="openai/gpt-4o-mini")
+agent = Agent(model="openai/gpt-4-turbo")
+agent = Agent(model="openai/gpt-5-mini")
 ```
+
+> **Note:** Mixtral models have been deprecated by Groq as of March 2025.
 
 ### Temperature and Tokens
 
 ```python
 agent = Agent(
-    model="openai/gpt-4o-mini",
+    model="gemini/gemini-2.5-flash",
     temperature=0.7,     # 0.0 = deterministic, 2.0 = very creative
     max_tokens=1000,     # Maximum tokens per response
     timeout=30           # Request timeout in seconds
@@ -248,14 +260,14 @@ agent = Agent(
 
 ```yaml
 llm:
-  provider: "openai"
-  model: "gpt-4o-mini"
+  provider: "gemini"
+  model: "gemini-2.5-flash"
   temperature: 0.1
   max_tokens: 1000
   timeout: 30
 
 # Legacy format also supported:
-# model: "openai/gpt-4o-mini"
+# model: "gemini/gemini-2.5-flash"
 ```
 
 ---
