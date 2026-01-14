@@ -147,7 +147,7 @@ class LLMConfig:
     
     def __post_init__(self):
         """Validate configuration values."""
-        if self.provider not in ["groq", "openai"]:
+        if self.provider not in ["groq", "openai", "gemini"]:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
         if not 0.0 <= self.temperature <= 2.0:
             raise ValueError("Temperature must be between 0.0 and 2.0")

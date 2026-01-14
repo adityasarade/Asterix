@@ -46,6 +46,7 @@ class ServiceType(Enum):
     OPENAI_EMBEDDINGS = "openai_embeddings"
     OPENAI_LLM = "openai_llm"
     GROQ = "groq"
+    GEMINI = "gemini"
     SENTENCE_TRANSFORMERS = "sentence_transformers"
 
 
@@ -340,6 +341,63 @@ class ServiceHealthMonitor:
                 error=f"Groq API error: {str(e)[:200]}"
             )
     
+    async def check_gemini_health(self) -> HealthCheckResult:
+        """
+        Check Gemini API health and connectivity.
+        
+        Returns:
+            Health check result with detailed status
+        """
+        start_time = time.time()
+        
+        try:
+            # Get Gemini API key
+            api_key = self.config.get_env("GEMINI_API_KEY")
+            if not api_key:
+                return HealthCheckResult(
+                    service=ServiceType.GEMINI.value,
+                    status="unhealthy",
+                    response_time=time.time() - start_time,
+                    error="Gemini API key not configured"
+                )
+            
+            # Test Gemini API connectivity
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            
+            # Test with a minimal request
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            response = model.generate_content(
+                "Hi",
+                generation_config={"max_output_tokens": 5}
+            )
+            
+            if response.candidates:
+                return HealthCheckResult(
+                    service=ServiceType.GEMINI.value,
+                    status="healthy",
+                    response_time=time.time() - start_time,
+                    details={
+                        "model": "gemini-2.5-flash",
+                        "usage_tokens": response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 0
+                    }
+                )
+            else:
+                return HealthCheckResult(
+                    service=ServiceType.GEMINI.value,
+                    status="unhealthy",
+                    response_time=time.time() - start_time,
+                    error="Gemini returned no response"
+                )
+                    
+        except Exception as e:
+            return HealthCheckResult(
+                service=ServiceType.GEMINI.value,
+                status="unhealthy",
+                response_time=time.time() - start_time,
+                error=f"Gemini API error: {str(e)[:200]}"
+            )
+    
     async def check_sentence_transformers_health(self) -> HealthCheckResult:
         """
         Check Sentence Transformers availability.
@@ -401,6 +459,7 @@ class ServiceHealthMonitor:
                 ServiceType.QDRANT.value,
                 ServiceType.OPENAI_EMBEDDINGS.value,
                 ServiceType.GROQ.value,
+                ServiceType.GEMINI.value,
                 ServiceType.SENTENCE_TRANSFORMERS.value
             ]
         
@@ -419,6 +478,8 @@ class ServiceHealthMonitor:
                 tasks.append(self.check_openai_health("llm"))
             elif service == ServiceType.GROQ.value:
                 tasks.append(self.check_groq_health())
+            elif service == ServiceType.GEMINI.value:
+                tasks.append(self.check_gemini_health())
             elif service == ServiceType.SENTENCE_TRANSFORMERS.value:
                 tasks.append(self.check_sentence_transformers_health())
         
@@ -637,6 +698,7 @@ class ServiceHealthTool:
             "qdrant": ServiceType.QDRANT.value,
             "embeddings": ServiceType.OPENAI_EMBEDDINGS.value,
             "groq": ServiceType.GROQ.value,
+            "gemini": ServiceType.GEMINI.value,
             "openai": ServiceType.OPENAI_LLM.value
         }
         

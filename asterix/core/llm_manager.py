@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 import openai
 import httpx
 from groq import Groq
+import google.generativeai as genai
 
 from .config import get_config_manager
 from ..utils.tokens import count_tokens
@@ -68,22 +69,24 @@ class LLMProviderManager:
         # Provider clients - initialize to None
         self._groq_client = None
         self._openai_client = None
+        self._gemini_configured = False
         
         # Get API keys from environment
         import os
         self._groq_api_key = os.getenv("GROQ_API_KEY")
         self._openai_api_key = os.getenv("OPENAI_API_KEY")
+        self._gemini_api_key = os.getenv("GEMINI_API_KEY")
         
         # Provider selection (simplified - no health checks for now)
         self._primary_provider = "groq"
         self._fallback_provider = "openai"
         
         # Performance tracking
-        self._operation_count = {"groq": 0, "openai": 0}
-        self._total_processing_time = {"groq": 0.0, "openai": 0.0}
-        self._total_tokens = {"groq": 0, "openai": 0}
-        self._error_count = {"groq": 0, "openai": 0}
-        self._provider_failures = {"groq": 0, "openai": 0}
+        self._operation_count = {"groq": 0, "openai": 0, "gemini": 0}
+        self._total_processing_time = {"groq": 0.0, "openai": 0.0, "gemini": 0.0}
+        self._total_tokens = {"groq": 0, "openai": 0, "gemini": 0}
+        self._error_count = {"groq": 0, "openai": 0, "gemini": 0}
+        self._provider_failures = {"groq": 0, "openai": 0, "gemini": 0}
         self._max_failures = 3
     
     async def _ensure_clients_initialized(self):
@@ -95,6 +98,11 @@ class LLMProviderManager:
         # Initialize OpenAI client
         if self._openai_client is None and self._openai_api_key:
             self._openai_client = openai.OpenAI(api_key=self._openai_api_key)
+        
+        # Initialize Gemini client
+        if not self._gemini_configured and self._gemini_api_key:
+            genai.configure(api_key=self._gemini_api_key)
+            self._gemini_configured = True
     
     async def _select_provider(self, force_provider: Optional[str] = None) -> str:
         """
@@ -340,8 +348,166 @@ class LLMProviderManager:
             logger.error(f"OpenAI API error: {e}")
             raise LLMError(f"OpenAI error: {e}")
     
+    async def _call_gemini(self, messages: List[LLMMessage],
+                          model: str = "gemini-2.5-flash",
+                          temperature: Optional[float] = None,
+                          max_tokens: Optional[int] = None,
+                          tools: Optional[List[Dict[str, Any]]] = None,
+                          tool_choice: Optional[Union[str, Dict]] = None) -> LLMResponse:
+        """
+        Call Gemini API for completion.
+        
+        Args:
+            messages: List of conversation messages
+            model: Gemini model to use
+            temperature: Temperature override
+            max_tokens: Max tokens override
+            tools: Tool definitions for function calling
+            tool_choice: Tool choice setting
+            
+        Returns:
+            LLM response object
+        """
+        if not self._gemini_configured:
+            raise LLMError("Gemini client not initialized")
+        
+        start_time = time.time()
+        
+        try:
+            # Get the generative model
+            gemini_model = genai.GenerativeModel(model)
+            
+            # Convert messages to Gemini format
+            # Gemini uses a different format: system instruction separate, then contents
+            system_instruction = None
+            gemini_contents = []
+            
+            for msg in messages:
+                if isinstance(msg, dict):
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                else:
+                    role = msg.role
+                    content = msg.content
+                
+                if role == "system":
+                    system_instruction = content
+                elif role == "assistant":
+                    gemini_contents.append({"role": "model", "parts": [content]})
+                else:
+                    gemini_contents.append({"role": "user", "parts": [content]})
+            
+            # Configure generation settings
+            generation_config = {
+                "temperature": temperature or 0.1,
+                "max_output_tokens": max_tokens or 1000,
+            }
+            
+            # Create model with system instruction if provided
+            if system_instruction:
+                gemini_model = genai.GenerativeModel(
+                    model,
+                    system_instruction=system_instruction
+                )
+            
+            # Handle tools if provided (convert OpenAI format to Gemini format)
+            gemini_tools = None
+            if tools:
+                gemini_tools = []
+                for tool in tools:
+                    if tool.get("type") == "function":
+                        func = tool.get("function", {})
+                        gemini_tools.append({
+                            "function_declarations": [{
+                                "name": func.get("name"),
+                                "description": func.get("description", ""),
+                                "parameters": func.get("parameters", {})
+                            }]
+                        })
+            
+            # Make API call
+            response = gemini_model.generate_content(
+                gemini_contents,
+                generation_config=generation_config,
+                tools=gemini_tools if gemini_tools else None
+            )
+            
+            # Calculate processing time
+            processing_time = time.time() - start_time
+            
+            # Extract response data
+            content = ""
+            finish_reason = "stop"
+            raw_response = None
+            
+            if response.candidates:
+                candidate = response.candidates[0]
+                if candidate.content and candidate.content.parts:
+                    content = candidate.content.parts[0].text if hasattr(candidate.content.parts[0], 'text') else ""
+                finish_reason = str(candidate.finish_reason) if hasattr(candidate, 'finish_reason') else "stop"
+            
+            # Build usage stats (Gemini provides token counts)
+            usage = {
+                "prompt_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else 0,
+                "completion_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else 0,
+                "total_tokens": response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 0
+            }
+            
+            # Update metrics
+            self._operation_count["gemini"] += 1
+            self._total_processing_time["gemini"] += processing_time
+            self._total_tokens["gemini"] += usage["total_tokens"]
+            
+            # Reset failure count on success
+            self._provider_failures["gemini"] = 0
+            
+            # Build raw response for tool calls
+            if response.candidates and hasattr(response.candidates[0].content, 'parts'):
+                parts = response.candidates[0].content.parts
+                tool_calls = []
+                for i, part in enumerate(parts):
+                    if hasattr(part, 'function_call'):
+                        tool_calls.append({
+                            "id": f"call_{i}",
+                            "type": "function",
+                            "function": {
+                                "name": part.function_call.name,
+                                "arguments": str(dict(part.function_call.args))
+                            }
+                        })
+                
+                if tool_calls:
+                    raw_response = {
+                        "choices": [{
+                            "message": {
+                                "content": content,
+                                "tool_calls": tool_calls
+                            }
+                        }]
+                    }
+            
+            result = LLMResponse(
+                content=content,
+                model=model,
+                provider="gemini",
+                usage=usage,
+                processing_time=processing_time,
+                finish_reason=finish_reason,
+                raw_response=raw_response
+            )
+            
+            logger.info(f"Gemini completion: {usage['total_tokens']} tokens in {processing_time:.3f}s")
+            return result
+            
+        except Exception as e:
+            self._error_count["gemini"] += 1
+            self._provider_failures["gemini"] += 1
+            logger.error(f"Gemini API error: {e}")
+            raise LLMError(f"Gemini error: {e}")
+    
     async def complete(self, messages: Union[str, List[LLMMessage]], 
                    provider: Optional[str] = None,
+                   model: Optional[str] = None,
                    temperature: Optional[float] = None,
                    max_tokens: Optional[int] = None,
                    tools: Optional[List[Dict[str, Any]]] = None,
@@ -382,6 +548,8 @@ class LLMProviderManager:
                 return await self._call_groq(messages, temperature, max_tokens, tools, tool_choice)
             elif selected_provider == "openai":
                 return await self._call_openai(messages, temperature, max_tokens, tools, tool_choice)
+            elif selected_provider == "gemini":
+                return await self._call_gemini(messages, model or "gemini-2.5-flash", temperature, max_tokens, tools, tool_choice)
             else:
                 raise LLMError(f"Unknown provider: {selected_provider}")
                 
@@ -395,8 +563,11 @@ class LLMProviderManager:
                 return await self.complete(
                     messages, 
                     provider=self._fallback_provider,
+                    model=model,
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    tools=tools,
+                    tool_choice=tool_choice,
                     retry_on_failure=False  # Prevent infinite recursion
                 )
             else:
