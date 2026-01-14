@@ -921,14 +921,25 @@ class Agent:
         """
         # Model context limits (tokens)
         MODEL_CONTEXT_LIMITS = {
-            "llama-3.3-70b-versatile": 8192,
+            # Groq models
+            "llama-3.3-70b-versatile": 128000,
             "llama-3.1-70b-versatile": 131072,
             "llama-3.1-8b-instant": 131072,
+            "qwen3-32b": 131072,
+            "kimi-k2-instruct": 262144,
+            # Gemini models
+            "gemini-2.5-flash": 1000000,
+            "gemini-2.5-pro": 1000000,
+            "gemini-2.0-flash": 1000000,
+            "gemini-3-flash": 200000,
+            "gemini-3-pro": 1000000,
+            # OpenAI models
+            "gpt-4o": 128000,
+            "gpt-4o-mini": 128000,
             "gpt-4-turbo": 128000,
             "gpt-4-turbo-preview": 128000,
             "gpt-4": 8192,
             "gpt-3.5-turbo": 16385,
-            "gpt-4o": 128000,
             "gpt-5-mini": 400000
         }
         

@@ -221,7 +221,7 @@ class AgentConfig:
     blocks: Dict[str, BlockConfig] = field(default_factory=dict)
     
     # LLM settings (simple)
-    model: str = "openai/gpt-5-mini"
+    model: str = "gemini/gemini-2.5-flash"
     temperature: float = 0.1
     max_tokens: int = 1000
     max_heartbeat_steps: int = 10
