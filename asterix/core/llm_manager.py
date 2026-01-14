@@ -131,7 +131,8 @@ class LLMProviderManager:
         self._provider_failures = {"groq": 0, "openai": 0}
         return self._primary_provider
     
-    async def _call_groq(self, messages: List[LLMMessage], 
+    async def _call_groq(self, messages: List[LLMMessage],
+                        model: str = "llama-3.3-70b-versatile",
                         temperature: Optional[float] = None,
                         max_tokens: Optional[int] = None,
                         tools: Optional[List[Dict[str, Any]]] = None,
@@ -141,6 +142,7 @@ class LLMProviderManager:
         
         Args:
             messages: List of conversation messages
+            model: Model name to use
             temperature: Temperature override
             max_tokens: Max tokens override
             
@@ -168,7 +170,7 @@ class LLMProviderManager:
             
             # Make API call
             api_params = {
-                "model": "llama-3.3-70b-versatile",
+                "model": model,
                 "messages": groq_messages,
                 "temperature": temperature or 0.1,
                 "max_tokens": max_tokens or 1000,
@@ -210,7 +212,7 @@ class LLMProviderManager:
             
             result = LLMResponse(
                 content=content,
-                model="llama-3.3-70b-versatile",
+                model=model,
                 provider="groq",
                 usage=usage,
                 processing_time=processing_time,
@@ -228,6 +230,7 @@ class LLMProviderManager:
             raise LLMError(f"Groq error: {e}")
     
     async def _call_openai(self, messages: List[LLMMessage],
+                          model: str = "gpt-4o",
                           temperature: Optional[float] = None,
                           max_tokens: Optional[int] = None,
                           tools: Optional[List[Dict[str, Any]]] = None,
@@ -237,6 +240,7 @@ class LLMProviderManager:
         
         Args:
             messages: List of conversation messages
+            model: Model name to use
             temperature: Temperature override
             max_tokens: Max tokens override
             
@@ -262,8 +266,8 @@ class LLMProviderManager:
                         "content": msg.content
                     })
             
-            # Get model name
-            model_name = "gpt-5-mini"
+            # Get model name from parameter
+            model_name = model
 
             # Build base API parameters
             api_params = {
@@ -321,7 +325,7 @@ class LLMProviderManager:
             
             result = LLMResponse(
                 content=content,
-                model="gpt-5-mini",
+                model=model_name,
                 provider="openai",
                 usage=usage,
                 processing_time=processing_time,
@@ -543,11 +547,11 @@ class LLMProviderManager:
         selected_provider = await self._select_provider(provider)
         
         try:
-            # Call the appropriate provider
+            # Call the appropriate provider with model
             if selected_provider == "groq":
-                return await self._call_groq(messages, temperature, max_tokens, tools, tool_choice)
+                return await self._call_groq(messages, model or "llama-3.3-70b-versatile", temperature, max_tokens, tools, tool_choice)
             elif selected_provider == "openai":
-                return await self._call_openai(messages, temperature, max_tokens, tools, tool_choice)
+                return await self._call_openai(messages, model or "gpt-4o", temperature, max_tokens, tools, tool_choice)
             elif selected_provider == "gemini":
                 return await self._call_gemini(messages, model or "gemini-2.5-flash", temperature, max_tokens, tools, tool_choice)
             else:

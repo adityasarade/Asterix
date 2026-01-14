@@ -617,6 +617,7 @@ class Agent:
                 response = asyncio.run(
                     self._llm_manager.complete(
                         messages=formatted_messages,
+                        model=self.config.llm.model,
                         temperature=self.config.llm.temperature,
                         max_tokens=self.config.llm.max_tokens,
                         tools=tool_schemas if tool_schemas else None,
@@ -630,7 +631,7 @@ class Agent:
                     tool_calls = self._extract_tool_calls(response)
                     logger.info(f"LLM requested {len(tool_calls)} tool calls")
                     
-                    # ✅ FIX: Format tool_calls in proper OpenAI structure
+                    # Format tool_calls in proper OpenAI structure
                     formatted_tool_calls = []
                     for tool_call in tool_calls:
                         formatted_tool_calls.append({
