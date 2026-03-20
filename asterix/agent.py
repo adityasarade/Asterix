@@ -163,6 +163,10 @@ class Agent:
                  max_tokens: int = 1000,
                  max_heartbeat_steps: int = 10,
                  config: Optional[AgentConfig] = None,
+                 system_prompt: Optional[str] = None,
+                 on_before_tool_call: Optional[Callable] = None,
+                 on_after_tool_call: Optional[Callable] = None,
+                 on_step: Optional[Callable] = None,
                  **kwargs):
         """
         Initialize an Agent.
@@ -175,6 +179,12 @@ class Agent:
             max_tokens: Maximum tokens for LLM responses
             max_heartbeat_steps: Maximum tool execution loop iterations
             config: Full AgentConfig object (overrides other args if provided)
+            system_prompt: Custom base system prompt (replaces default if set)
+            on_before_tool_call: Callback(tool_name, args) called before each tool.
+                Return False to skip execution.
+            on_after_tool_call: Callback(tool_name, args, result) called after each tool.
+                Fire-and-forget; exceptions are logged but don't interrupt flow.
+            on_step: Callback(step_number, step_info) called at end of each heartbeat step.
             **kwargs: Additional config options (storage, memory, embedding)
         
         Example:
@@ -245,7 +255,13 @@ class Agent:
         # State tracking
         self.created_at = datetime.now(timezone.utc)
         self.last_updated = self.created_at
-        
+
+        # Callbacks
+        self.system_prompt = system_prompt
+        self.on_before_tool_call = on_before_tool_call
+        self.on_after_tool_call = on_after_tool_call
+        self.on_step = on_step
+
         logger.info(f"Initialized agent '{self.id}' with {len(self.blocks)} memory blocks")
     
     def _initialize_blocks(self):
@@ -657,14 +673,41 @@ class Agent:
                     
                     for tool_result in tool_results:
                         llm_messages.append(tool_result)
-                    
+
+                    # on_step callback (tool-calls path)
+                    if self.on_step is not None:
+                        try:
+                            step_info = {
+                                "step_number": step + 1,
+                                "max_steps": max_steps,
+                                "tool_names": [tc['name'] for tc in tool_calls],
+                                "final_response": None
+                            }
+                            self.on_step(step + 1, step_info)
+                        except Exception as step_err:
+                            logger.warning(f"on_step callback error: {step_err}")
+
                     # Continue loop
                     continue
-                
+
                 else:
                     # LLM provided final text response
                     assistant_response = response.content
                     logger.info(f"LLM provided final response after {step + 1} steps")
+
+                    # on_step callback (final-response path)
+                    if self.on_step is not None:
+                        try:
+                            step_info = {
+                                "step_number": step + 1,
+                                "max_steps": max_steps,
+                                "tool_names": [],
+                                "final_response": assistant_response
+                            }
+                            self.on_step(step + 1, step_info)
+                        except Exception as step_err:
+                            logger.warning(f"on_step callback error: {step_err}")
+
                     break
             
             # Check if we exhausted max steps without final response
@@ -734,8 +777,9 @@ class Agent:
         Returns:
             System prompt string
         """
+        base_prompt = self.system_prompt if self.system_prompt else "You are a helpful AI assistant with persistent memory and access to tools."
         lines = [
-            "You are a helpful AI assistant with persistent memory and access to tools.",
+            base_prompt,
             "",
             "# Memory Blocks",
             "You have access to the following memory blocks that you can read and modify:",
@@ -821,6 +865,35 @@ class Agent:
         
         return stats
     
+    def get_history(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Get copies of the most recent conversation messages.
+
+        Args:
+            limit: Maximum number of messages to return. If <= 0, returns all.
+
+        Returns:
+            List of message dicts with role, content, and timestamp.
+
+        Example:
+            >>> history = agent.get_history(limit=5)
+            >>> for msg in history:
+            ...     print(f"{msg['role']}: {msg['content'][:50]}")
+        """
+        if limit <= 0:
+            messages = self.conversation_history
+        else:
+            messages = self.conversation_history[-limit:]
+
+        return [
+            {
+                "role": msg.get("role", "unknown"),
+                "content": msg.get("content", ""),
+                "timestamp": msg.get("timestamp", None)
+            }
+            for msg in messages
+        ]
+
     def get_context_status(self) -> Dict[str, Any]:
         """
         Get current context window status.
@@ -1299,21 +1372,50 @@ class Agent:
         for tool_call in tool_calls:
             tool_id = tool_call['id']
             tool_name = tool_call['name']
-            
+
             print(f"   ⚙️  Calling: {tool_name}")  # ADD THIS
             print(f"   📝 Arguments: {tool_call['arguments']}")  # ADD THIS
-            
+
             try:
                 # Parse arguments
                 arguments = json.loads(tool_call['arguments'])
-                
+
+                # on_before_tool_call: if callback returns False, skip execution
+                if self.on_before_tool_call is not None:
+                    try:
+                        before_result = self.on_before_tool_call(tool_name, arguments)
+                        if before_result is False:
+                            logger.info(f"Tool {tool_name} rejected by on_before_tool_call")
+                            results.append({
+                                'tool_call_id': tool_id,
+                                'role': 'tool',
+                                'name': tool_name,
+                                'content': f"Tool call '{tool_name}' was rejected by on_before_tool_call callback."
+                            })
+                            # Fire on_after_tool_call with result=None for rejected calls
+                            if self.on_after_tool_call is not None:
+                                try:
+                                    self.on_after_tool_call(tool_name, arguments, None)
+                                except Exception as after_err:
+                                    logger.warning(f"on_after_tool_call error (rejected): {after_err}")
+                            continue
+                    except Exception as before_err:
+                        logger.warning(f"on_before_tool_call error: {before_err}")
+
                 logger.info(f"Executing tool: {tool_name} with args: {arguments}")
-                
+
                 # Execute tool via registry
                 tool_result = self._tool_registry.execute_tool(tool_name, **arguments)
-                
+
                 print(f"   ✅ Result: {str(tool_result)[:100]}")  # ADD THIS
-                
+
+                # on_after_tool_call: fire-and-forget
+                if self.on_after_tool_call is not None:
+                    try:
+                        self.on_after_tool_call(tool_name, arguments, tool_result)
+                    except Exception as after_err:
+                        logger.warning(f"on_after_tool_call error: {after_err}")
+
                 # Format result for LLM
                 results.append({
                     'tool_call_id': tool_id,
@@ -1321,22 +1423,34 @@ class Agent:
                     'name': tool_name,
                     'content': str(tool_result)  # ToolResult.__str__ returns formatted content
                 })
-                
+
                 logger.info(f"Tool {tool_name} result: {str(tool_result)[:100]}")
-                
+
             except json.JSONDecodeError as e:
                 print(f"   ❌ JSON Error: {e}")  # ADD THIS
                 logger.error(f"Failed to parse tool arguments for {tool_name}: {e}")
+                # Fire on_after_tool_call with result=None for error branches
+                if self.on_after_tool_call is not None:
+                    try:
+                        self.on_after_tool_call(tool_name, {}, None)
+                    except Exception as after_err:
+                        logger.warning(f"on_after_tool_call error (json error): {after_err}")
                 results.append({
                     'tool_call_id': tool_id,
                     'role': 'tool',
                     'name': tool_name,
                     'content': f"Error: Invalid tool arguments - {str(e)}"
                 })
-            
+
             except Exception as e:
                 print(f"   ❌ Execution Error: {e}")  # ADD THIS
                 logger.error(f"Tool execution error ({tool_name}): {e}")
+                # Fire on_after_tool_call with result=None for error branches
+                if self.on_after_tool_call is not None:
+                    try:
+                        self.on_after_tool_call(tool_name, arguments if 'arguments' in dir() else {}, None)
+                    except Exception as after_err:
+                        logger.warning(f"on_after_tool_call error (exec error): {after_err}")
                 results.append({
                     'tool_call_id': tool_id,
                     'role': 'tool',

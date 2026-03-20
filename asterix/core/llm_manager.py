@@ -87,6 +87,7 @@ class LLMProviderManager:
         self._total_tokens = {"groq": 0, "openai": 0, "gemini": 0}
         self._error_count = {"groq": 0, "openai": 0, "gemini": 0}
         self._provider_failures = {"groq": 0, "openai": 0, "gemini": 0}
+        self._provider_health = {"groq": True, "openai": True, "gemini": True}
         self._max_failures = 3
     
     async def _ensure_clients_initialized(self):
@@ -128,7 +129,7 @@ class LLMProviderManager:
         
         # Reset and try again
         logger.warning("Both providers have failed multiple times, resetting failure counts")
-        self._provider_failures = {"groq": 0, "openai": 0}
+        self._provider_failures = {"groq": 0, "openai": 0, "gemini": 0}
         return self._primary_provider
     
     async def _call_groq(self, messages: List[LLMMessage],
@@ -692,7 +693,7 @@ Keywords:"""
             "providers": {}
         }
         
-        for provider in ["groq", "openai"]:
+        for provider in ["groq", "openai", "gemini"]:
             operation_count = self._operation_count[provider]
             avg_processing_time = (
                 self._total_processing_time[provider] / operation_count

@@ -9,3 +9,4 @@ dist/
 agent_states/
 .pytest_cache/
 .mypy_cache/
+changes_plan.md
