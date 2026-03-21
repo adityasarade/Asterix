@@ -20,7 +20,8 @@ from datetime import datetime, timezone
 import openai
 import httpx
 from groq import Groq
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from .config import get_config_manager
 from ..utils.tokens import count_tokens
@@ -70,7 +71,7 @@ class LLMProviderManager:
         # Provider clients - initialize to None
         self._groq_client = None
         self._openai_client = None
-        self._gemini_configured = False
+        self._gemini_client = None
         
         # Get API keys from environment
         import os
@@ -102,9 +103,8 @@ class LLMProviderManager:
             self._openai_client = openai.OpenAI(api_key=self._openai_api_key)
         
         # Initialize Gemini client
-        if not self._gemini_configured and self._gemini_api_key:
-            genai.configure(api_key=self._gemini_api_key)
-            self._gemini_configured = True
+        if not self._gemini_client and self._gemini_api_key:
+            self._gemini_client = genai.Client(api_key=self._gemini_api_key)
     
     async def _select_provider(self, force_provider: Optional[str] = None) -> str:
         """
@@ -374,20 +374,17 @@ class LLMProviderManager:
         Returns:
             LLM response object
         """
-        if not self._gemini_configured:
+        if not self._gemini_client:
             raise LLMError("Gemini client not initialized")
-        
+
         start_time = time.time()
-        
+
         try:
-            # Get the generative model
-            gemini_model = genai.GenerativeModel(model)
-            
             # Convert messages to Gemini format
             # Gemini uses a different format: system instruction separate, then contents
             system_instruction = None
             gemini_contents = []
-            
+
             for msg in messages:
                 if isinstance(msg, dict):
                     role = msg.get("role", "user")
@@ -395,57 +392,53 @@ class LLMProviderManager:
                 else:
                     role = msg.role
                     content = msg.content
-                
+
                 if role == "system":
                     system_instruction = content
                 elif role == "assistant":
                     gemini_contents.append({"role": "model", "parts": [content]})
                 else:
                     gemini_contents.append({"role": "user", "parts": [content]})
-            
-            # Configure generation settings
-            generation_config = {
-                "temperature": temperature or 0.1,
-                "max_output_tokens": max_tokens or 1000,
-            }
-            
-            # Create model with system instruction if provided
-            if system_instruction:
-                gemini_model = genai.GenerativeModel(
-                    model,
-                    system_instruction=system_instruction
-                )
-            
+
             # Handle tools if provided (convert OpenAI format to Gemini format)
+            # Group ALL function declarations into a single tool object
             gemini_tools = None
             if tools:
-                gemini_tools = []
+                function_declarations = []
                 for tool in tools:
                     if tool.get("type") == "function":
                         func = tool.get("function", {})
-                        gemini_tools.append({
-                            "function_declarations": [{
-                                "name": func.get("name"),
-                                "description": func.get("description", ""),
-                                "parameters": func.get("parameters", {})
-                            }]
+                        function_declarations.append({
+                            "name": func.get("name"),
+                            "description": func.get("description", ""),
+                            "parameters": func.get("parameters", {})
                         })
-            
-            # Make API call
-            response = gemini_model.generate_content(
-                gemini_contents,
-                generation_config=generation_config,
-                tools=gemini_tools if gemini_tools else None
+                if function_declarations:
+                    gemini_tools = [{"function_declarations": function_declarations}]
+
+            # Build config with all settings
+            config = types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=temperature or 0.1,
+                max_output_tokens=max_tokens or 1000,
+                tools=gemini_tools if gemini_tools else None,
             )
-            
+
+            # Make API call via client
+            response = self._gemini_client.models.generate_content(
+                model=model,
+                contents=gemini_contents,
+                config=config,
+            )
+
             # Calculate processing time
             processing_time = time.time() - start_time
-            
+
             # Extract response data
             content = ""
             finish_reason = "stop"
             raw_response = None
-            
+
             if response.candidates:
                 candidate = response.candidates[0]
                 if candidate.content and candidate.content.parts:
@@ -455,31 +448,30 @@ class LLMProviderManager:
                             content = part.text
                             break
                 finish_reason = str(candidate.finish_reason) if hasattr(candidate, 'finish_reason') else "stop"
-            
+
             # Build usage stats (Gemini provides token counts)
             usage = {
                 "prompt_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else 0,
                 "completion_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else 0,
                 "total_tokens": response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 0
             }
-            
+
             # Update metrics
             self._operation_count["gemini"] += 1
             self._total_processing_time["gemini"] += processing_time
             self._total_tokens["gemini"] += usage["total_tokens"]
-            
+
             # Reset failure count on success
             self._provider_failures["gemini"] = 0
-            
+
             # Build raw response for tool calls
             if response.candidates and hasattr(response.candidates[0].content, 'parts'):
                 parts = response.candidates[0].content.parts
                 tool_calls = []
                 if parts:
                     for i, part in enumerate(parts):
-                        # Protobuf parts always have function_call attr; check name to confirm it's real
-                        if hasattr(part, 'function_call') and part.function_call and part.function_call.name:
-                            args_dict = dict(part.function_call.args) if part.function_call.args else {}
+                        if part.function_call is not None and part.function_call.name:
+                            args_dict = part.function_call.args if part.function_call.args else {}
                             tool_calls.append({
                                 "id": f"call_{part.function_call.name}_{i}",
                                 "type": "function",
@@ -488,7 +480,7 @@ class LLMProviderManager:
                                     "arguments": json.dumps(args_dict)
                                 }
                             })
-                
+
                 if tool_calls:
                     finish_reason = "tool_calls"
                     raw_response = {
@@ -499,7 +491,7 @@ class LLMProviderManager:
                             }
                         }]
                     }
-            
+
             result = LLMResponse(
                 content=content,
                 model=model,
@@ -509,7 +501,7 @@ class LLMProviderManager:
                 finish_reason=finish_reason,
                 raw_response=raw_response
             )
-            
+
             logger.info(f"Gemini completion: {usage['total_tokens']} tokens in {processing_time:.3f}s")
             return result
             

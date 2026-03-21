@@ -245,16 +245,13 @@ def test_5_get_history():
 
 
 if __name__ == "__main__":
-    import time as _time
-
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         print("ERROR: GEMINI_API_KEY not set. Cannot run integration tests.")
         exit(1)
 
     print(f"Using GEMINI_API_KEY: {api_key[:10]}...")
-    print("Running live integration tests against Gemini API...")
-    print("(Adding delays between tests to respect free-tier rate limits: 5 req/min)\n")
+    print("Running live integration tests against Gemini API...\n")
 
     tests = [
         test_1_gemini_basic_chat,
@@ -270,10 +267,6 @@ if __name__ == "__main__":
     errors = []
 
     for i, test_fn in enumerate(tests):
-        if i > 0:
-            wait = 65  # Wait >60s to fully reset the per-minute quota
-            print(f"\n--- Waiting {wait}s for rate-limit reset ---\n")
-            _time.sleep(wait)
         try:
             test_fn()
             passed += 1

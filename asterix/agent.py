@@ -1372,6 +1372,7 @@ class Agent:
         for tool_call in tool_calls:
             tool_id = tool_call['id']
             tool_name = tool_call['name']
+            arguments = {}
 
             print(f"   ⚙️  Calling: {tool_name}")  # ADD THIS
             print(f"   📝 Arguments: {tool_call['arguments']}")  # ADD THIS
@@ -1448,7 +1449,7 @@ class Agent:
                 # Fire on_after_tool_call with result=None for error branches
                 if self.on_after_tool_call is not None:
                     try:
-                        self.on_after_tool_call(tool_name, arguments if 'arguments' in dir() else {}, None)
+                        self.on_after_tool_call(tool_name, arguments, None)
                     except Exception as after_err:
                         logger.warning(f"on_after_tool_call error (exec error): {after_err}")
                 results.append({
