@@ -44,7 +44,7 @@ agent = Agent(
         "user_prefs": BlockConfig(size=800, priority=5),
         "notes": BlockConfig(size=1200, priority=3)
     },
-    model="openai/gpt-4o-mini"
+    model="gemini/gemini-2.5-flash"
 )
 
 # Chat with agent
@@ -80,7 +80,7 @@ agent.save_state()
 ```json
 {
   "agent_id": "my_assistant",
-  "model": "openai/gpt-4o-mini",
+  "model": "gemini/gemini-2.5-flash",
   "blocks": {
     "task": {
       "content": "Current task content...",
@@ -129,7 +129,7 @@ from asterix import Agent, BlockConfig, StorageConfig
 agent = Agent(
     agent_id="production_agent",
     blocks={"task": BlockConfig(size=2000, priority=1)},
-    model="openai/gpt-4o-mini",
+    model="gemini/gemini-2.5-flash",
     storage=StorageConfig(
         state_backend="sqlite",
         state_db="./agent_states/agents.db"

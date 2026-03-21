@@ -24,10 +24,10 @@ Asterix supports three configuration methods with the following priority order:
 
 ```python
 # Method 1: Python (highest priority)
-agent = Agent(model="openai/gpt-4o-mini", temperature=0.7)
+agent = Agent(model="gemini/gemini-2.5-flash", temperature=0.7)
 
 # Method 2: Environment variables
-# AGENT_MODEL=openai/gpt-4o-mini
+# AGENT_MODEL=gemini/gemini-2.5-flash
 # AGENT_TEMPERATURE=0.7
 
 # Method 3: YAML file
@@ -42,6 +42,7 @@ Create a `.env` file in your project root:
 
 ```bash
 # LLM Provider (at least one required)
+GEMINI_API_KEY=your-gemini-api-key
 GROQ_API_KEY=your-groq-api-key
 OPENAI_API_KEY=your-openai-api-key
 
@@ -53,17 +54,18 @@ QDRANT_COLLECTION_NAME=asterix_memory  # Optional
 # Optional Settings
 ASTERIX_STATE_DIR=./agent_states
 ASTERIX_LOG_LEVEL=INFO
-AGENT_MODEL=openai/gpt-4o-mini
+AGENT_MODEL=gemini/gemini-2.5-flash
 AGENT_TEMPERATURE=0.1
 ```
 
 ### Available Environment Variables
 
 #### LLM Settings
-- `AGENT_MODEL` - Model to use (e.g., "openai/gpt-4o-mini")
+- `AGENT_MODEL` - Model to use (e.g., "gemini/gemini-2.5-flash")
 - `AGENT_TEMPERATURE` - Sampling temperature (0.0-2.0)
 - `AGENT_MAX_TOKENS` - Max tokens per completion
 - `LLM_TIMEOUT` - Request timeout in seconds
+- `GEMINI_API_KEY` - Google Gemini API key
 - `GROQ_API_KEY` - Groq API key
 - `OPENAI_API_KEY` - OpenAI API key
 
@@ -186,7 +188,7 @@ from asterix import Agent, BlockConfig, StorageConfig, MemoryConfig
 
 agent = Agent(
     agent_id="my_agent",
-    model="openai/gpt-4o-mini",
+    model="gemini/gemini-2.5-flash",
     temperature=0.7,
     max_tokens=1000,
 
@@ -543,10 +545,11 @@ from asterix import Agent, BlockConfig, StorageConfig, MemoryConfig
 
 agent = Agent(
     agent_id="production_agent",
-    model="openai/gpt-4o-mini",
+    model="gemini/gemini-2.5-flash",
     temperature=0.1,
     max_tokens=1000,
     max_heartbeat_steps=10,
+    system_prompt="You are a production assistant. Be precise and concise.",
 
     blocks={
         "persona": BlockConfig(size=1000, priority=10),
@@ -565,7 +568,11 @@ agent = Agent(
     memory_config=MemoryConfig(
         eviction_strategy="summarize_and_archive",
         context_window_threshold=0.85
-    )
+    ),
+
+    on_before_tool_call=lambda name, args: True,  # Approve all tool calls
+    on_after_tool_call=lambda name, args, result: print(f"Tool {name} completed"),
+    on_step=lambda step_num, info: print(f"Step {step_num}: {info}")
 )
 ```
 

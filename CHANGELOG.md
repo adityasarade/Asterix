@@ -5,6 +5,30 @@ All notable changes to the Asterix Agent Library will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-03-21
+
+### Added
+- Custom system prompt support (`system_prompt=` parameter)
+- `on_before_tool_call` callback for human-in-the-loop approval
+- `on_after_tool_call` callback for audit logging
+- `on_step` callback for heartbeat loop progress streaming
+- `get_history(limit=)` public method for conversation history API
+- Live integration tests for Gemini (`tests/test_oscar_integration.py`)
+
+### Changed
+- Migrated from deprecated `google-generativeai` SDK to `google-genai` v1.x
+- Gemini tool schemas now grouped into single `function_declarations` (improves reliability)
+- Gemini uses `genai.Client()` instead of `genai.configure()` (proper client pattern)
+- Gemini part detection uses `is not None` instead of protobuf emptiness check
+- Default model updated to `gemini/gemini-2.5-flash`
+
+### Fixed
+- `arguments` variable unbound in `_execute_tool_calls()` error handler
+- Removed unnecessary 65s rate-limit delays from integration tests
+
+### Dependencies
+- `google-generativeai>=0.8.0` → `google-genai>=1.0.0`
+
 ## [0.1.5] - 2026-01-14
 
 ### Added
@@ -185,13 +209,6 @@ Initial alpha release for testing and feedback.
 ---
 
 ## Planned for Future Releases
-
-### [0.2.0] - Planned
-- **Enhanced Tool System** - Tool versioning and deprecation support
-- **Advanced Memory Strategies** - Configurable eviction and archival strategies
-- **Performance Optimizations** - Caching and batch processing
-- **Extended Documentation** - Tutorial series and advanced usage guides
-- **Monitoring & Observability** - Built-in metrics and tracing
 
 ### [0.3.0] - Planned
 - **Multi-Agent Coordination** - Agent-to-agent communication

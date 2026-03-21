@@ -24,13 +24,17 @@ from asterix import Agent, BlockConfig, StorageConfig, MemoryConfig
 
 agent = Agent(
     agent_id="my_agent",
-    model="openai/gpt-4o-mini",
+    model="gemini/gemini-2.5-flash",
     temperature=0.7,
     max_tokens=1000,
     max_heartbeat_steps=10,
     blocks={"task": BlockConfig(size=1500, priority=1)},
     storage=StorageConfig(...),
-    memory_config=MemoryConfig(...)
+    memory_config=MemoryConfig(...),
+    system_prompt="You are a helpful coding assistant.",
+    on_before_tool_call=lambda name, args: True,
+    on_after_tool_call=lambda name, args, result: None,
+    on_step=lambda step_num, step_info: None
 )
 ```
 
@@ -39,13 +43,17 @@ agent = Agent(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `agent_id` | `str` | Generated | Unique identifier for the agent |
-| `model` | `str` | Required | LLM model (e.g., "openai/gpt-4o-mini") |
+| `model` | `str` | Required | LLM model (e.g., "gemini/gemini-2.5-flash") |
 | `temperature` | `float` | `0.7` | Sampling temperature (0.0-2.0) |
 | `max_tokens` | `int` | `1000` | Maximum tokens per completion |
 | `max_heartbeat_steps` | `int` | `10` | Max tool call steps per turn |
 | `blocks` | `dict[str, BlockConfig]` | `{}` | Memory block configuration |
 | `storage` | `StorageConfig` | Default | Storage configuration |
 | `memory_config` | `MemoryConfig` | Default | Memory management configuration |
+| `system_prompt` | `Optional[str]` | `None` | Custom base system prompt |
+| `on_before_tool_call` | `Optional[Callable]` | `None` | Callback(tool_name, args) → bool; return False to skip |
+| `on_after_tool_call` | `Optional[Callable]` | `None` | Callback(tool_name, args, result) for audit logging |
+| `on_step` | `Optional[Callable]` | `None` | Callback(step_number, step_info) for progress streaming |
 
 #### Methods
 
@@ -172,6 +180,39 @@ agent.update_memory("task", "New task content")
 **Parameters:**
 - `block` (str): Block name
 - `content` (str): New content
+
+---
+
+##### `get_history(limit: int = 20) -> list[dict]`
+
+Retrieve conversation history.
+
+```python
+history = agent.get_history(limit=10)
+for msg in history:
+    print(f"[{msg['timestamp']}] {msg['role']}: {msg['content']}")
+```
+
+**Parameters:**
+- `limit` (int, optional): Maximum number of messages to return (default: 20)
+
+**Returns:**
+- `list[dict]`: List of dicts with `role`, `content`, and `timestamp` keys
+
+---
+
+##### `get_context_status() -> dict`
+
+Get context window usage information.
+
+```python
+status = agent.get_context_status()
+print(f"Used: {status['used_tokens']}/{status['max_tokens']}")
+print(f"Usage: {status['usage_percent']:.1f}%")
+```
+
+**Returns:**
+- `dict`: Context window usage info including `used_tokens`, `max_tokens`, `usage_percent`
 
 ---
 

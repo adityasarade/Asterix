@@ -2,7 +2,7 @@
 
 **Stateful AI agents with editable memory blocks and persistent storage.**
 
-> **Note:** Asterix is in Beta (v0.1.4). Core features are stable and production-ready.
+> **Note:** Asterix is in Beta (v0.2.0). Core features are stable and production-ready.
 > Enhanced features and optimizations are in active development.
 
 Asterix is a lightweight Python library for building AI agents that can remember, learn, and persist their state across sessions. No servers required - just `pip install` and start building.
@@ -18,6 +18,10 @@ Asterix is a lightweight Python library for building AI agents that can remember
 - **Persistent Storage** - State saves across sessions (JSON/SQLite backends)
 - **Semantic Search** - Qdrant Cloud integration for long-term memory retrieval
 - **Enhanced Tool System** - Easy decorator pattern with parameter validation, retry logic, and categories
+- **Custom System Prompts** - Override the base system prompt for specialized agent behavior
+- **Tool Call Callbacks** - Before/after hooks for human-in-the-loop approval and audit logging
+- **Step-by-Step Progress Callbacks** - Stream heartbeat loop progress via `on_step` callback
+- **Conversation History API** - Retrieve conversation history with `get_history(limit=)`
 - **Auto-Documentation** - Tools automatically generate markdown/JSON documentation
 - **Smart Error Handling** - Helpful error messages with suggestions and context
 - **Multi-Model Support** - Works with Gemini, Groq, OpenAI, and extensible to others
@@ -140,7 +144,7 @@ pytest --cov=asterix --cov-report=html
 
 ## Project Status
 
-**Current Version:** 0.1.4 (Beta)
+**Current Version:** 0.2.0 (Beta)
 
 **Roadmap:**
 - [x] Core agent implementation
@@ -149,6 +153,9 @@ pytest --cov=asterix --cov-report=html
 - [x] Qdrant integration
 - [x] Enhanced tool system with validation
 - [x] Auto-documentation
+- [x] Multi-model support (Gemini, Groq, OpenAI)
+- [x] OSCAR integration (callbacks, system prompts, history API)
+- [x] Gemini SDK migration (`google-genai` v1.x)
 - [ ] Performance optimizations
 - [ ] Advanced monitoring
 - [ ] Streaming responses

@@ -12,6 +12,7 @@ Asterix provides a powerful tool system that allows agents to interact with exte
 - [Error Handling](#error-handling)
 - [Auto-Documentation](#auto-documentation)
 - [Tool Discovery](#tool-discovery)
+- [Tool Call Hooks](#tool-call-hooks)
 - [Advanced Tool Development](#advanced-tool-development)
 
 ---
@@ -251,6 +252,58 @@ info = agent._tool_registry.get_tool_info("core_memory_append")
 print(f"Category: {info['category']}")
 print(f"Constraints: {info['constraints']}")
 print(f"Examples: {info['examples']}")
+```
+
+---
+
+## Tool Call Hooks
+
+Asterix supports before/after hooks on tool calls, enabling human-in-the-loop approval, audit logging, and custom side effects.
+
+### `on_before_tool_call`
+
+Called before each tool execution. Return `False` to skip the tool call.
+
+```python
+def approve_tool(tool_name: str, args: dict) -> bool:
+    """Human-in-the-loop: ask for confirmation on dangerous tools."""
+    if tool_name in ("execute_shell", "delete_file"):
+        answer = input(f"Allow {tool_name}({args})? [y/N] ")
+        return answer.lower() == "y"
+    return True  # Auto-approve safe tools
+
+agent = Agent(
+    model="gemini/gemini-2.5-flash",
+    on_before_tool_call=approve_tool
+)
+```
+
+### `on_after_tool_call`
+
+Called after each tool execution with the result. Useful for audit logging.
+
+```python
+import logging
+logger = logging.getLogger("audit")
+
+def log_tool_call(tool_name: str, args: dict, result: str):
+    logger.info(f"Tool: {tool_name}, Args: {args}, Result: {result[:100]}")
+
+agent = Agent(
+    model="gemini/gemini-2.5-flash",
+    on_after_tool_call=log_tool_call
+)
+```
+
+### Combining Both Hooks
+
+```python
+agent = Agent(
+    model="gemini/gemini-2.5-flash",
+    on_before_tool_call=approve_tool,
+    on_after_tool_call=log_tool_call,
+    on_step=lambda step, info: print(f"Step {step}: {info}")
+)
 ```
 
 ---

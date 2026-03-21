@@ -29,7 +29,9 @@ cd Asterix
 pip install -e .
 
 # Set up environment variables (create .env file)
+# GEMINI_API_KEY=your-gemini-key
 # OPENAI_API_KEY=your-key
+# GROQ_API_KEY=your-groq-key
 # QDRANT_URL=your-qdrant-url
 # QDRANT_API_KEY=your-qdrant-key
 ```
@@ -66,7 +68,7 @@ agent = Agent(
         "task": BlockConfig(size=1500, priority=1),
         "notes": BlockConfig(size=1000, priority=2)
     },
-    model="openai/gpt-4o-mini"
+    model="gemini/gemini-2.5-flash"
 )
 
 # Chat with your agent
@@ -175,7 +177,7 @@ agent = Agent(
         "user_prefs": BlockConfig(size=800, priority=5),
         "notes": BlockConfig(size=1200, priority=3)
     },
-    model="openai/gpt-4o-mini"
+    model="gemini/gemini-2.5-flash"
 )
 
 agent.chat("Hi! I prefer Python over JavaScript.")
@@ -218,7 +220,7 @@ from asterix import Agent, BlockConfig, StorageConfig
 agent = Agent(
     agent_id="production_agent",
     blocks={"task": BlockConfig(size=2000, priority=1)},
-    model="openai/gpt-4o-mini",
+    model="gemini/gemini-2.5-flash",
     storage=StorageConfig(
         state_backend="sqlite",
         state_db="./agent_states/agents.db"
@@ -322,7 +324,7 @@ agent = Agent(
         "current_task": BlockConfig(size=2000, priority=1),
         "file_context": BlockConfig(size=3000, priority=2)
     },
-    model="openai/gpt-4o-mini"
+    model="gemini/gemini-2.5-flash"
 )
 
 @agent.tool(name="list_files")
@@ -372,7 +374,7 @@ agent = Agent.from_yaml("agent_config.yaml")
 # YAML file structure
 """
 agent_id: "my_agent"
-model: "openai/gpt-4o-mini"
+model: "gemini/gemini-2.5-flash"
 blocks:
   task:
     size: 1500
@@ -401,20 +403,20 @@ python examples/yaml_config.py
 main_agent = Agent(
     agent_id="orchestrator",
     blocks={"plan": BlockConfig(size=1500)},
-    model="openai/gpt-4o-mini"
+    model="gemini/gemini-2.5-flash"
 )
 
 # Specialized agents
 code_reviewer = Agent(
     agent_id="reviewer",
     blocks={"code": BlockConfig(size=3000)},
-    model="openai/gpt-4o-mini"
+    model="gemini/gemini-2.5-flash"
 )
 
 data_analyst = Agent(
     agent_id="analyst",
     blocks={"data": BlockConfig(size=2000)},
-    model="openai/gpt-4o-mini"
+    model="gemini/gemini-2.5-flash"
 )
 
 # Coordination

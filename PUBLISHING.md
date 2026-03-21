@@ -253,4 +253,4 @@ python -c "import asterix; print(asterix.__version__)"
 
 ---
 
-**Last Updated:** 2025-11-04
+**Last Updated:** 2026-03-21
