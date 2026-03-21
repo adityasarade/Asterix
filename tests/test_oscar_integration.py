@@ -85,6 +85,7 @@ def test_3_tool_calling_with_hooks():
     agent = Agent(
         agent_id="test_hooks",
         model="gemini/gemini-2.5-flash",
+        max_heartbeat_steps=3,
         on_before_tool_call=before_cb,
         on_after_tool_call=after_cb,
         blocks={"task": BlockConfig(size=1000, priority=1)},
@@ -132,6 +133,7 @@ def test_3b_tool_rejection():
     agent = Agent(
         agent_id="test_reject",
         model="gemini/gemini-2.5-flash",
+        max_heartbeat_steps=3,
         on_before_tool_call=reject_all,
         on_after_tool_call=after_cb,
         blocks={"task": BlockConfig(size=1000, priority=1)},
@@ -175,6 +177,7 @@ def test_4_on_step_progress():
     agent = Agent(
         agent_id="test_progress",
         model="gemini/gemini-2.5-flash",
+        max_heartbeat_steps=3,
         on_step=step_cb,
         blocks={"task": BlockConfig(size=1000, priority=1)},
     )
@@ -224,7 +227,7 @@ def test_5_get_history():
         print(f"    [{entry['role']}] {entry['content'][:60]}...")
 
     # Should have at least 4 entries (2 user + 2 assistant)
-    assert len(history) >= 4, f"Expected >= 4 history entries, got {len(history)}"
+    assert len(history) >= 4, f"Expected >= 4 history entries, got {len(history)}. History: {history}"
 
     # Check structure
     for entry in history:
@@ -242,6 +245,8 @@ def test_5_get_history():
 
 
 if __name__ == "__main__":
+    import time as _time
+
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         print("ERROR: GEMINI_API_KEY not set. Cannot run integration tests.")
@@ -249,6 +254,7 @@ if __name__ == "__main__":
 
     print(f"Using GEMINI_API_KEY: {api_key[:10]}...")
     print("Running live integration tests against Gemini API...")
+    print("(Adding delays between tests to respect free-tier rate limits: 5 req/min)\n")
 
     tests = [
         test_1_gemini_basic_chat,
@@ -263,7 +269,11 @@ if __name__ == "__main__":
     failed = 0
     errors = []
 
-    for test_fn in tests:
+    for i, test_fn in enumerate(tests):
+        if i > 0:
+            wait = 65  # Wait >60s to fully reset the per-minute quota
+            print(f"\n--- Waiting {wait}s for rate-limit reset ---\n")
+            _time.sleep(wait)
         try:
             test_fn()
             passed += 1

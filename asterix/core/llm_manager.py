@@ -10,6 +10,7 @@ Provides intelligent routing and management for LLM providers with:
 """
 
 import asyncio
+import json
 import time
 import logging
 from typing import Dict, List, Optional, Any, Union
@@ -448,7 +449,11 @@ class LLMProviderManager:
             if response.candidates:
                 candidate = response.candidates[0]
                 if candidate.content and candidate.content.parts:
-                    content = candidate.content.parts[0].text if hasattr(candidate.content.parts[0], 'text') else ""
+                    # Find the first text part (may not be index 0 if tool calls present)
+                    for part in candidate.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            content = part.text
+                            break
                 finish_reason = str(candidate.finish_reason) if hasattr(candidate, 'finish_reason') else "stop"
             
             # Build usage stats (Gemini provides token counts)
@@ -470,18 +475,22 @@ class LLMProviderManager:
             if response.candidates and hasattr(response.candidates[0].content, 'parts'):
                 parts = response.candidates[0].content.parts
                 tool_calls = []
-                for i, part in enumerate(parts):
-                    if hasattr(part, 'function_call'):
-                        tool_calls.append({
-                            "id": f"call_{i}",
-                            "type": "function",
-                            "function": {
-                                "name": part.function_call.name,
-                                "arguments": str(dict(part.function_call.args))
-                            }
-                        })
+                if parts:
+                    for i, part in enumerate(parts):
+                        # Protobuf parts always have function_call attr; check name to confirm it's real
+                        if hasattr(part, 'function_call') and part.function_call and part.function_call.name:
+                            args_dict = dict(part.function_call.args) if part.function_call.args else {}
+                            tool_calls.append({
+                                "id": f"call_{part.function_call.name}_{i}",
+                                "type": "function",
+                                "function": {
+                                    "name": part.function_call.name,
+                                    "arguments": json.dumps(args_dict)
+                                }
+                            })
                 
                 if tool_calls:
+                    finish_reason = "tool_calls"
                     raw_response = {
                         "choices": [{
                             "message": {
