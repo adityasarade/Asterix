@@ -30,6 +30,9 @@ pip install -e .
 
 # Set up environment variables (create .env file)
 # GEMINI_API_KEY=your-gemini-key
+# Or use Vertex AI instead of API key:
+# GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+# GOOGLE_CLOUD_LOCATION=us-central1
 # OPENAI_API_KEY=your-key
 # GROQ_API_KEY=your-groq-key
 # QDRANT_URL=your-qdrant-url

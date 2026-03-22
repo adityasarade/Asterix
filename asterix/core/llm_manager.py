@@ -78,7 +78,9 @@ class LLMProviderManager:
         self._groq_api_key = os.getenv("GROQ_API_KEY")
         self._openai_api_key = os.getenv("OPENAI_API_KEY")
         self._gemini_api_key = os.getenv("GEMINI_API_KEY")
-        
+        self._google_cloud_project = os.getenv("GOOGLE_CLOUD_PROJECT")
+        self._google_cloud_location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+
         # Provider selection (simplified - no health checks for now)
         self._primary_provider = "groq"
         self._fallback_provider = "openai"
@@ -103,8 +105,15 @@ class LLMProviderManager:
             self._openai_client = openai.OpenAI(api_key=self._openai_api_key)
         
         # Initialize Gemini client
-        if not self._gemini_client and self._gemini_api_key:
-            self._gemini_client = genai.Client(api_key=self._gemini_api_key)
+        if not self._gemini_client:
+            if self._google_cloud_project:
+                self._gemini_client = genai.Client(
+                    vertexai=True,
+                    project=self._google_cloud_project,
+                    location=self._google_cloud_location
+                )
+            elif self._gemini_api_key:
+                self._gemini_client = genai.Client(api_key=self._gemini_api_key)
     
     async def _select_provider(self, force_provider: Optional[str] = None) -> str:
         """

@@ -344,34 +344,49 @@ class ServiceHealthMonitor:
     async def check_gemini_health(self) -> HealthCheckResult:
         """
         Check Gemini API health and connectivity.
-        
+
+        Supports dual-mode auth: Vertex AI if GOOGLE_CLOUD_PROJECT is set,
+        otherwise falls back to API key.
+
         Returns:
             Health check result with detailed status
         """
         start_time = time.time()
-        
+
         try:
-            # Get Gemini API key
-            api_key = self.config.get_env("GEMINI_API_KEY")
-            if not api_key:
+            import os
+            from google import genai
+
+            # Dual-mode auth: Vertex AI or API key
+            google_cloud_project = os.getenv("GOOGLE_CLOUD_PROJECT")
+            api_key = os.getenv("GEMINI_API_KEY")
+
+            if google_cloud_project:
+                google_cloud_location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+                client = genai.Client(
+                    vertexai=True,
+                    project=google_cloud_project,
+                    location=google_cloud_location
+                )
+                auth_mode = "vertex_ai"
+            elif api_key:
+                client = genai.Client(api_key=api_key)
+                auth_mode = "api_key"
+            else:
                 return HealthCheckResult(
                     service=ServiceType.GEMINI.value,
                     status="unhealthy",
                     response_time=time.time() - start_time,
-                    error="Gemini API key not configured"
+                    error="Gemini not configured: set GOOGLE_CLOUD_PROJECT (Vertex AI) or GEMINI_API_KEY"
                 )
-            
-            # Test Gemini API connectivity
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            
+
             # Test with a minimal request
-            model = genai.GenerativeModel("gemini-2.5-flash")
-            response = model.generate_content(
-                "Hi",
-                generation_config={"max_output_tokens": 5}
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents="Hi",
+                config={"max_output_tokens": 5}
             )
-            
+
             if response.candidates:
                 return HealthCheckResult(
                     service=ServiceType.GEMINI.value,
@@ -379,6 +394,7 @@ class ServiceHealthMonitor:
                     response_time=time.time() - start_time,
                     details={
                         "model": "gemini-2.5-flash",
+                        "auth_mode": auth_mode,
                         "usage_tokens": response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 0
                     }
                 )
@@ -389,7 +405,7 @@ class ServiceHealthMonitor:
                     response_time=time.time() - start_time,
                     error="Gemini returned no response"
                 )
-                    
+
         except Exception as e:
             return HealthCheckResult(
                 service=ServiceType.GEMINI.value,

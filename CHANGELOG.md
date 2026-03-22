@@ -5,6 +5,15 @@ All notable changes to the Asterix Agent Library will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-22
+
+### Added
+- Vertex AI authentication support for Gemini (`GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` env vars)
+- Dual-mode Gemini auth: uses Vertex AI if `GOOGLE_CLOUD_PROJECT` is set, falls back to API key
+
+### Changed
+- Health check migrated from legacy `google.generativeai` to `google.genai` SDK
+
 ## [0.2.0] - 2026-03-21
 
 ### Added

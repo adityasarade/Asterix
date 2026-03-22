@@ -2,7 +2,7 @@
 
 **Stateful AI agents with editable memory blocks and persistent storage.**
 
-> **Note:** Asterix is in Beta (v0.2.0). Core features are stable and production-ready.
+> **Note:** Asterix is in Beta (v0.2.1). Core features are stable and production-ready.
 > Enhanced features and optimizations are in active development.
 
 Asterix is a lightweight Python library for building AI agents that can remember, learn, and persist their state across sessions. No servers required - just `pip install` and start building.
@@ -89,7 +89,7 @@ agent.chat("What were we discussing?")  # Remembers everything!
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 Comprehensive documentation is available in the [`docs/`](docs/) directory:
 
@@ -112,7 +112,7 @@ Comprehensive documentation is available in the [`docs/`](docs/) directory:
 
 ---
 
-## 📦 Examples
+## Examples
 
 Complete working examples in [`examples/`](examples/):
 
@@ -144,7 +144,7 @@ pytest --cov=asterix --cov-report=html
 
 ## Project Status
 
-**Current Version:** 0.2.0 (Beta)
+**Current Version:** 0.2.1 (Beta)
 
 **Roadmap:**
 - [x] Core agent implementation
@@ -156,6 +156,7 @@ pytest --cov=asterix --cov-report=html
 - [x] Multi-model support (Gemini, Groq, OpenAI)
 - [x] OSCAR integration (callbacks, system prompts, history API)
 - [x] Gemini SDK migration (`google-genai` v1.x)
+- [x] Vertex AI support (dual-mode Gemini auth)
 - [ ] Performance optimizations
 - [ ] Advanced monitoring
 - [ ] Streaming responses

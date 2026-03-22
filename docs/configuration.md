@@ -46,6 +46,10 @@ GEMINI_API_KEY=your-gemini-api-key
 GROQ_API_KEY=your-groq-api-key
 OPENAI_API_KEY=your-openai-api-key
 
+# Vertex AI (optional — if set, Gemini uses Vertex AI instead of API key)
+GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+GOOGLE_CLOUD_LOCATION=us-central1
+
 # Vector Storage (required for archival memory)
 QDRANT_URL=https://your-cluster.cloud.qdrant.io:6333
 QDRANT_API_KEY=your-qdrant-api-key
@@ -66,6 +70,8 @@ AGENT_TEMPERATURE=0.1
 - `AGENT_MAX_TOKENS` - Max tokens per completion
 - `LLM_TIMEOUT` - Request timeout in seconds
 - `GEMINI_API_KEY` - Google Gemini API key
+- `GOOGLE_CLOUD_PROJECT` - GCP project ID (enables Vertex AI auth for Gemini)
+- `GOOGLE_CLOUD_LOCATION` - GCP region for Vertex AI (default: `us-central1`)
 - `GROQ_API_KEY` - Groq API key
 - `OPENAI_API_KEY` - OpenAI API key
 
